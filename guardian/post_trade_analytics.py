@@ -33,7 +33,9 @@ class PostTradeAnalyticsEngine:
         )
         if is_crypto:
             # Delta exchange taker fee is 0.05% of notional turnover
-            turnover = (entry * qty) + (exit_price * qty)
+            from portfolio.position_sizer import get_delta_contract_multiplier
+            mult = get_delta_contract_multiplier(symbol) or 1.0
+            turnover = ((entry * qty) + (exit_price * qty)) * mult
             return round(turnover * 0.0005, 4)
         else:
             # Indian Equity: Angel One charges min(20, 0.03%) per order
@@ -53,13 +55,24 @@ class PostTradeAnalyticsEngine:
         if brokerage_fee is None:
             brokerage_fee = PostTradeAnalyticsEngine.calculate_brokerage_fee(state, exit_price)
 
-        # Direction-aware P&L: a short profits when price FALLS. The previous long-only
-        # formula recorded winning shorts as losses (and vice versa), corrupting the
-        # treasury ledger and the 4-quadrant learning loop.
+        is_crypto = (
+            getattr(state, "exchange", "NSE") in ["DELTA", "BINANCE"]
+            or state.symbol.endswith("USD")
+            or state.symbol.endswith("USDT")
+            or state.symbol.endswith("BTC")
+            or state.symbol.endswith("ETH")
+        )
+        if is_crypto:
+            from portfolio.position_sizer import get_delta_contract_multiplier
+            mult = get_delta_contract_multiplier(state.symbol) or 1.0
+        else:
+            mult = 1.0
+
+        # Direction-aware P&L: a short profits when price FALLS.
         is_short = getattr(state, "side", "BUY").upper() == "SELL"
         price_move = (entry - exit_price) if is_short else (exit_price - entry)
-        gross_pnl = price_move * qty
-        realized_pnl = round(gross_pnl - brokerage_fee, 2)
+        gross_pnl = price_move * qty * mult
+        realized_pnl = round(gross_pnl - brokerage_fee, 4 if is_crypto else 2)
         realized_pnl_pct = round((price_move / entry) * 100.0, 2) if entry > 0 else 0.0
 
         # Maximum Favorable Excursion (MFE) %: best price seen in the trade's direction

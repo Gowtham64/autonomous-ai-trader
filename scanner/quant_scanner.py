@@ -175,7 +175,9 @@ class QuantMarketScanner:
 
             ltp = float(close.iloc[-1])
             curr_volume = float(volume.iloc[-1])
-            avg_volume_20 = float(volume.tail(20).mean())
+            # BUG-08 FIX: Exclude incomplete current daily bar from 20-day historical baseline
+            closed_volume = volume.iloc[:-1] if len(volume) > 20 else volume
+            avg_volume_20 = float(closed_volume.tail(20).mean())
             rel_volume = curr_volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
 
             # Volatility (ATR 14)

@@ -70,11 +70,9 @@ def test_bug_01_pnl_ignores_contract_multiplier():
     true_fee = round(true_turnover * 0.0005, 4)  # ~ $0.0058 USD
     true_net_pnl = round(true_gross_pnl - true_fee, 2)  # +$0.03 USD
 
-    # BUG PROOF: PostTradeAnalyticsEngine reported ~$3.41 P&L instead of ~$0.03
-    assert report.realized_pnl > 3.0, f"Buggy PnL should be overstated (> 3.0), got {report.realized_pnl}"
-    assert abs(report.realized_pnl - 3.41) < 0.1
-    # Exaggeration is ~100x
-    assert report.realized_pnl > (true_net_pnl * 50)
+    # BUG RESOLUTION VERIFICATION: PostTradeAnalyticsEngine now reports real ~$0.03 P&L instead of inflated ~$3.41
+    assert abs(report.realized_pnl - true_net_pnl) < 0.05, f"Expected {true_net_pnl}, got {report.realized_pnl}"
+    assert report.realized_pnl < 0.10
 
 
 def test_bug_01_short_asset_multiplier_distortion():
@@ -114,8 +112,8 @@ def test_bug_01_short_asset_multiplier_distortion():
     true_loss = (exit_price - 368.95) * 2 * mult_tslax
     assert abs(true_loss) < 0.01  # less than 1 cent!
 
-    # BUG PROOF: The bot recorded -$1.58 (distorted by > 150x!)
-    assert report.realized_pnl < -1.0, f"Reported loss should be severely distorted, got {report.realized_pnl}"
+    # BUG RESOLUTION VERIFICATION: The bot now correctly records tiny ~$0.01 loss instead of -$1.58
+    assert abs(report.realized_pnl) < 0.05, f"Loss should be under $0.05, got {report.realized_pnl}"
 
 
 @pytest.mark.asyncio
@@ -302,8 +300,8 @@ async def test_bug_04_exit_order_omitted_from_database():
             assert len(actions) == 1
             assert actions[0][1] == GuardianAction.HARD_STOP_EXIT
 
-            # BUG PROOF: TradeRepository.save_order was NEVER called for the exit order!
-            assert mock_save_order.call_count == 0, "Exit order was unexpectedly persisted; bug was expected!"
+            # BUG RESOLUTION VERIFICATION: TradeRepository.save_order is now invoked for exit orders
+            assert mock_save_order.call_count == 1, "Exit order must be persisted to TradeRepository!"
 
 
 @pytest.mark.asyncio
@@ -344,7 +342,7 @@ async def test_bug_05_broker_exit_drops_journal():
         assert worker.state.is_active is False
         assert any("closed on broker but active in AI state" in d for d in report.discrepancies)
 
-        # BUG PROOF: No journal record is created for exchange-closed trades!
-        assert mock_save_journal.call_count == 0, "Exchange-closed trade was unexpectedly journaled!"
+        # BUG RESOLUTION VERIFICATION: Journal record is now created for exchange-closed trades
+        assert mock_save_journal.call_count == 1, "Exchange-closed trade must be persisted to trade_journal!"
 
 

@@ -1,4 +1,6 @@
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 from agents.facilitator.facilitator import AdversarialDebateDesk
 from agents.lifecycle.agent_manager import agent_manager
@@ -78,22 +80,55 @@ class AutonomousTradingDaemon:
                     treasury.buckets.trading_capital = avail_margin
                     self.total_capital = real_cap
                     self.risk_engine.total_equity = real_cap
+                    today_utc = datetime.now(UTC).date()
+                    risk_state_file = Path("data/daily_risk_state.json")
+
                     # Autonomous kill-switch recovery: accept the realized loss and restart
                     # risk baselines from current equity so trading can resume unattended.
                     if kill_switch.rebase_required:
                         kill_switch.rebase_required = False
                         self.risk_engine.peak_equity = real_cap
-                        self._equity_day = datetime.now(UTC).date()
+                        self._equity_day = today_utc
                         self._day_start_equity = real_cap
                         self.risk_engine.daily_realized_loss = 0.0
                         logger.warning(f"🔄 [Risk Rebase] Equity baselines reset to current broker equity ({real_cap:.2f}) after auto-recovery.")
+                        try:
+                            risk_state_file.parent.mkdir(parents=True, exist_ok=True)
+                            with open(risk_state_file, "w") as f:
+                                json.dump({
+                                    "date": today_utc.isoformat(),
+                                    "day_start_equity": real_cap,
+                                    "last_updated": datetime.now(UTC).isoformat(),
+                                }, f, indent=2)
+                        except Exception:
+                            pass
+
                     # Track day-start equity so the daily-loss circuit breaker measures
-                    # real broker equity decline (realized + unrealized), not an internal
-                    # counter that nothing updates.
-                    today_utc = datetime.now(UTC).date()
+                    # real broker equity decline (realized + unrealized), persisting across process restarts
+                    persisted_day_start = None
+                    if risk_state_file.exists():
+                        try:
+                            with open(risk_state_file, "r") as f:
+                                saved_data = json.load(f)
+                                if saved_data.get("date") == today_utc.isoformat():
+                                    persisted_day_start = float(saved_data.get("day_start_equity", 0.0))
+                        except Exception as e:
+                            logger.debug(f"[Risk State] Could not load persisted risk state: {e}")
+
                     if getattr(self, "_equity_day", None) != today_utc:
                         self._equity_day = today_utc
-                        self._day_start_equity = real_cap
+                        self._day_start_equity = persisted_day_start if (persisted_day_start and persisted_day_start > 0) else real_cap
+                        try:
+                            risk_state_file.parent.mkdir(parents=True, exist_ok=True)
+                            with open(risk_state_file, "w") as f:
+                                json.dump({
+                                    "date": today_utc.isoformat(),
+                                    "day_start_equity": self._day_start_equity,
+                                    "last_updated": datetime.now(UTC).isoformat(),
+                                }, f, indent=2)
+                        except Exception as e:
+                            logger.debug(f"[Risk State] Could not persist risk state: {e}")
+
                     self.risk_engine.daily_realized_loss = max(0.0, self._day_start_equity - real_cap)
                     # Peak equity only ratchets upward within a session; lowering it would
                     # silently disable the max-drawdown kill switch.
@@ -415,6 +450,24 @@ class AutonomousTradingDaemon:
                                     try:
                                         from core.schemas.trade import PositionSnapshot
                                         ep = exec_report.average_price or order.price or candidate.ltp
+                                        side_val = order.action.value.upper()
+                                        ref_entry = order.price or candidate.ltp or ep
+
+                                        # Re-anchor stop loss & target to actual fill price
+                                        stop_dist = abs(ref_entry - order.stop_loss) if (order.stop_loss and order.stop_loss > 0) else (ep * 0.015)
+                                        tgt_dist = abs(order.target - ref_entry) if (order.target and order.target > 0) else (stop_dist * 2.0)
+
+                                        if side_val == "BUY":
+                                            adj_sl = ep - stop_dist
+                                            if adj_sl >= ep:
+                                                adj_sl = ep * 0.985
+                                            adj_tgt = ep + tgt_dist
+                                        else:
+                                            adj_sl = ep + stop_dist
+                                            if adj_sl <= ep:
+                                                adj_sl = ep * 1.015
+                                            adj_tgt = ep - tgt_dist
+
                                         trade_guardian.register_position(
                                             pos=PositionSnapshot(
                                                 position_id=f"POS-{order.symbol}-{int(datetime.now(UTC).timestamp())}",
@@ -428,9 +481,10 @@ class AutonomousTradingDaemon:
                                                 quantity=exec_report.filled_quantity,
                                                 entry_price=ep,
                                                 current_price=ep,
-                                                stop_loss=order.stop_loss,
-                                                target_1=order.target,
+                                                stop_loss=round(adj_sl, 4),
+                                                target_1=round(adj_tgt, 4),
                                                 highest_price_seen=ep,
+                                                lowest_price_seen=ep,
                                                 unrealized_pnl=0.0,
                                                 opened_at=datetime.now(UTC),
                                                 is_active=True,

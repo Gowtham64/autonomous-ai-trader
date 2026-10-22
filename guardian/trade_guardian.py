@@ -162,6 +162,38 @@ class MasterTradeGuardian:
                     report.discrepancies.append(f"Position {sym} closed on broker but active in AI state. Auto-resolving.")
                     worker.state.is_active = False
 
+                    # BUG-05 FIX: Calculate analytics, record in Treasury, and persist completed trade in journal
+                    try:
+                        exit_price = worker.state.current_price or worker.state.entry_price
+                        post_report = PostTradeAnalyticsEngine.analyze_completed_guardian_position(
+                            state=worker.state,
+                            exit_price=exit_price,
+                            exit_reason="BROKER_RECONCILED_CLOSED",
+                            brokerage_fee=None,
+                            interventions_count=worker.interventions_count,
+                        )
+                        self.completed_reports.append(post_report)
+                        gross_pnl = round(post_report.realized_pnl + post_report.brokerage_and_fees, 2)
+                        treasury.record_trade_result(
+                            pnl=gross_pnl,
+                            broker_fees=post_report.brokerage_and_fees,
+                            symbol=sym,
+                        )
+                        from database.repositories.trade_repo import TradeRepository
+                        holding_secs = max(0.0, (datetime.now(UTC) - worker.state.opened_at).total_seconds()) if worker.state.opened_at else 0.0
+                        await TradeRepository.save_journal(
+                            symbol=sym,
+                            entry_price=worker.state.entry_price,
+                            exit_price=exit_price,
+                            pnl=post_report.realized_pnl,
+                            exit_reason="BROKER_RECONCILED_CLOSED",
+                            holding_period_seconds=holding_secs,
+                            market_regime="Unknown",
+                            reflection_notes=f"side={worker.state.side} qty={worker.state.quantity} closed_by_broker=true",
+                        )
+                    except Exception as rec_err:
+                        logger.warning(f"[Trade Guardian] Broker-closed trade record error: {rec_err}")
+
             report.is_synchronized = len(report.discrepancies) == 0
             self.is_reconciled = report.is_synchronized
 
@@ -265,7 +297,12 @@ class MasterTradeGuardian:
                                 decision_id=f"GRD-{action.value}",
                                 reduce_only=True,  # can only close/shrink the position, never flip or double it
                             )
-                            await router.route_order(exit_order)
+                            exec_report = await router.route_order(exit_order)
+                            try:
+                                from database.repositories.trade_repo import TradeRepository
+                                await TradeRepository.save_order(exec_report, action=exit_order.action.value, decision_id=exit_order.decision_id)
+                            except Exception as db_err:
+                                logger.debug(f"[Trade Guardian] Exit order DB persistence notice: {db_err}")
 
 
                         # Generate Post-Trade Quality Report and deactivate worker

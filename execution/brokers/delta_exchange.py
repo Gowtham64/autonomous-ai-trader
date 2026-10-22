@@ -292,18 +292,37 @@ class DeltaExchangeBroker(BaseBroker):
             raw_order = res["result"]
             placed_order_id = str(raw_order.get("id"))
 
-            # Server-Side Bracket Defense: If target profit is defined, place native Delta Bracket Order
+            # Server-Side Bracket Defense: Verify open position before placing native Delta Bracket Order
             if order.target and order.target > 0 and product_id and not getattr(order, "reduce_only", False):
                 try:
-                    await asyncio.sleep(0.5)  # Allow matching engine to register open position
-                    await self.place_bracket_order(
-                        product_id=product_id,
-                        product_symbol=order.symbol,
-                        stop_loss=order.stop_loss,
-                        take_profit=order.target,
-                    )
+                    pos_confirmed = False
+                    for _ in range(4):
+                        await asyncio.sleep(0.5)
+                        curr_positions = await self.get_positions()
+                        if any(p.symbol == order.symbol and p.quantity > 0 for p in curr_positions):
+                            pos_confirmed = True
+                            break
+
+                    if pos_confirmed:
+                        bracket_res = await self.place_bracket_order(
+                            product_id=product_id,
+                            product_symbol=order.symbol,
+                            stop_loss=order.stop_loss,
+                            take_profit=order.target,
+                        )
+                        if not bracket_res.get("success", False):
+                            logger.error(f"❌ [Delta Exchange] Bracket order rejected for {order.symbol}: {bracket_res.get('error')}")
+                    else:
+                        logger.warning(f"⚠️ [Delta Exchange] Position for {order.symbol} not confirmed open after 2.0s; bracket deferred to guardian.")
                 except Exception as b_err:
                     logger.warning(f"[Delta Exchange] Bracket order notice: {b_err}")
+
+            # If this was a reduce_only exit, cancel any residual bracket or protective orders for this product to prevent orphans
+            if getattr(order, "reduce_only", False) and product_id:
+                try:
+                    await self.cancel_product_orders(product_id)
+                except Exception as c_err:
+                    logger.debug(f"[Delta Exchange] Error clearing residual orders for product {product_id}: {c_err}")
 
             # filled = size - unfilled (previously this reported unfilled_size as filled,
             # so fully-filled orders were recorded as quantity 0 and vice versa)
@@ -392,6 +411,25 @@ class DeltaExchangeBroker(BaseBroker):
             payload["product_id"] = product_id
         res = await self._request("DELETE", "/v2/orders", payload=payload)
         return bool(res.get("success"))
+
+    async def cancel_product_orders(self, product_id: int) -> int:
+        """Cancels all open orders (including bracket/stop orders) for a specific product ID."""
+        try:
+            res = await self._request("GET", f"/v2/orders?state=open&product_id={product_id}")
+            if not res.get("success"):
+                return 0
+            cancelled = 0
+            for o in res.get("result", []):
+                oid = o.get("id")
+                if oid:
+                    c_res = await self._request("DELETE", "/v2/orders", payload={"id": oid, "product_id": product_id})
+                    if c_res.get("success"):
+                        cancelled += 1
+                        logger.info(f"🛡️ [Delta Exchange] Cancelled residual order {oid} for product {product_id}")
+            return cancelled
+        except Exception as e:
+            logger.warning(f"[Delta Exchange] Error cancelling product orders for {product_id}: {e}")
+            return 0
 
     async def cancel_stale_orders(self, max_age_seconds: int = 180) -> int:
         """Cancels unfilled open orders older than max_age_seconds to free up blocked margin."""

@@ -62,7 +62,12 @@ class PositionGuardianWorker:
         )
         self.trailing_atr_multiplier = trailing_atr_multiplier
         self.interventions_count = 0
-        logger.info(f"🛡️ [Trade Guardian Assigned] {self.guardian_id} activated for {pos.symbol} (Qty: {pos.quantity} @ ₹{pos.entry_price}, SL: ₹{pos.stop_loss}, TGT: ₹{pos.target_1})")
+        is_crypto_sym = getattr(pos, "exchange", "").upper() == "DELTA" or "USD" in pos.symbol
+        c_sym = "$" if is_crypto_sym else "₹"
+        px_fmt = f"{pos.entry_price:.4f}" if is_crypto_sym else f"{pos.entry_price:.2f}"
+        sl_fmt = f"{pos.stop_loss:.4f}" if is_crypto_sym else f"{pos.stop_loss:.2f}"
+        tgt_fmt = f"{pos.target_1:.4f}" if is_crypto_sym else f"{pos.target_1:.2f}"
+        logger.info(f"🛡️ [Trade Guardian Assigned] {self.guardian_id} activated for {pos.symbol} (Qty: {pos.quantity} @ {c_sym}{px_fmt}, SL: {c_sym}{sl_fmt}, TGT: {c_sym}{tgt_fmt})")
 
     async def evaluate_tick(
         self,
@@ -94,15 +99,21 @@ class PositionGuardianWorker:
         is_crypto = getattr(self.state, "exchange", "").upper() == "DELTA" or "USD" in self.state.symbol
         curr_sym = "$" if is_crypto else "₹"
 
+        if is_crypto:
+            from portfolio.position_sizer import get_delta_contract_multiplier
+            mult = get_delta_contract_multiplier(self.state.symbol) or 1.0
+        else:
+            mult = 1.0
+
         if is_short:
-            pnl = (self.state.entry_price - current_ltp) * self.state.quantity
+            pnl = (self.state.entry_price - current_ltp) * self.state.quantity * mult
             pnl_pct = ((self.state.entry_price - current_ltp) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             peak_gain_pct = ((self.state.entry_price - self.state.lowest_price_seen) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             pullback_from_peak_pct = ((current_ltp - self.state.lowest_price_seen) / self.state.lowest_price_seen) * 100.0 if self.state.lowest_price_seen > 0 else 0.0
             distance_to_sl = self.state.stop_loss - current_ltp
             distance_to_tgt = current_ltp - self.state.target_1
         else:
-            pnl = (current_ltp - self.state.entry_price) * self.state.quantity
+            pnl = (current_ltp - self.state.entry_price) * self.state.quantity * mult
             pnl_pct = ((current_ltp - self.state.entry_price) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             peak_gain_pct = ((self.state.highest_price_seen - self.state.entry_price) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             pullback_from_peak_pct = ((self.state.highest_price_seen - current_ltp) / self.state.highest_price_seen) * 100.0 if self.state.highest_price_seen > 0 else 0.0
@@ -124,7 +135,8 @@ class PositionGuardianWorker:
                 logger.warning(f"⚠️ [Guardian {self.state.symbol}] Abnormal bid-ask spread detected ({self.state.spread_pct}%). Slippage risk elevated.")
 
         # Determine Risk Level
-        loss_ratio = abs(pnl) / max(1.0, self.state.max_permitted_loss_inr)
+        max_allowed_loss = (self.state.max_permitted_loss_inr / 85.0) if is_crypto else self.state.max_permitted_loss_inr
+        loss_ratio = abs(pnl) / max(0.50 if is_crypto else 1.0, max_allowed_loss)
         if pnl < 0 and (loss_ratio >= 0.80 or distance_to_sl <= (atr * 0.3)):
             self.state.risk_level = GuardianRiskLevel.HIGH
         elif pnl < 0 and loss_ratio >= 0.50:
@@ -162,6 +174,7 @@ class PositionGuardianWorker:
                 entry_price=self.state.entry_price,
                 current_ltp=current_ltp,
                 highest_price_seen=self.state.highest_price_seen,
+                require_closed_candle=True,
             )
             if should_exit:
                 self.interventions_count += 1
@@ -237,7 +250,7 @@ class PositionGuardianWorker:
             if peak_gain_pct >= 0.60 and pullback_from_peak_pct >= 0.25:
                 self.interventions_count += 1
                 reason = (
-                    f"Stock Performance Exit: Position peaked at ₹{self.state.highest_price_seen:.2f} (+{peak_gain_pct:.2f}%) "
+                    f"Performance Exit: Position peaked at {curr_sym}{self.state.highest_price_seen:.4f if is_crypto else self.state.highest_price_seen:.2f} (+{peak_gain_pct:.2f}%) "
                     f"and pulled back by -{pullback_from_peak_pct:.2f}%. Securing profit (+{pnl_pct:+.2f}%) on price action deceleration."
                 )
                 logger.info(f"🎯 [Performance Harvest] {self.state.symbol}: {reason}")

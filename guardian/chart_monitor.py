@@ -30,6 +30,7 @@ class ChartProfitTaker:
         entry_price: float,
         current_ltp: float,
         highest_price_seen: float,
+        require_closed_candle: bool = False,
     ) -> tuple[bool, str]:
         """
         Examines 5-minute candles to detect:
@@ -76,16 +77,19 @@ class ChartProfitTaker:
         # 1. SHOOTING STAR / UPPER WICK REJECTION (Institutional Selling)
         # -------------------------------------------------------------
         # Long upper shadow >= 55% of the candle's total range at session highs
-        candle_range = h - l
-        if candle_range > 0:
-            upper_wick = h - max(o, c)
-            upper_wick_ratio = upper_wick / candle_range
-            # If current candle or previous candle showed high upper wick rejection
-            if upper_wick_ratio >= 0.55 and pnl_pct >= 0.30 and current_ltp < h:
-                return True, (
-                    f"Chart Exhaustion: Shooting Star / Rejection Wick ({upper_wick_ratio*100:.0f}% upper shadow) "
-                    f"at ₹{h:.2f}. Sellers actively capping breakout. Taking profit (+{pnl_pct:.2f}%)."
-                )
+        # When require_closed_candle is True, only confirmed closed candles are accepted
+        # to prevent momentary intraday wick fluctuations from prematurely killing winning trades.
+        if not require_closed_candle:
+            candle_range = h - l
+            if candle_range > 0:
+                upper_wick = h - max(o, c)
+                upper_wick_ratio = upper_wick / candle_range
+                # If current candle showed high upper wick rejection
+                if upper_wick_ratio >= 0.55 and pnl_pct >= 0.30 and current_ltp < h:
+                    return True, (
+                        f"Chart Exhaustion: Shooting Star / Rejection Wick ({upper_wick_ratio*100:.0f}% upper shadow) "
+                        f"at {h:.2f}. Sellers actively capping breakout. Taking profit (+{pnl_pct:.2f}%)."
+                    )
 
         prev_range = prev_h - prev_l
         if prev_range > 0:
@@ -93,7 +97,7 @@ class ChartProfitTaker:
             prev_wick_ratio = prev_upper_wick / prev_range
             if prev_wick_ratio >= 0.60 and pnl_pct >= 0.30 and c < prev_c:
                 return True, (
-                    f"Chart Exhaustion: Confirmed previous candle Shooting Star ({prev_wick_ratio*100:.0f}% wick at ₹{prev_h:.2f}). "
+                    f"Chart Exhaustion: Confirmed previous candle Shooting Star ({prev_wick_ratio*100:.0f}% wick at {prev_h:.2f}). "
                     f"Price failing follow-through. Taking profit (+{pnl_pct:.2f}%)."
                 )
 
