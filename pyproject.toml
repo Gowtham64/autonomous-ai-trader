@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autonomous-ai-trader"
+version = "0.1.0"
+description = "Autonomous Multi-Agent AI Trading System for Indian Markets (NSE/BSE)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "sqlalchemy>=2.0.30",
+    "greenlet>=3.0.0",
+    "aiosqlite>=0.20.0",
+    "asyncpg>=0.29.0",
+    "redis>=5.0.4",
+    "apscheduler>=3.10.4",
+    "pandas>=2.2.2",
+    "numpy>=1.26.4",
+    "yfinance>=0.2.40",
+    "ta>=0.11.0",
+    "httpx>=0.27.0",
+    "langgraph>=0.0.60",
+    "langchain>=0.2.0",
+    "langchain-core>=0.2.0",
+    "langchain-openai>=0.1.7",
+    "langchain-anthropic>=0.1.15",
+    "langchain-google-genai>=1.0.5",
+    "pyotp>=2.10.0",
+    "websockets>=16.1.1",
+    "torch>=2.14.1",
+    "einops>=0.8.2",
+    "huggingface-hub>=2.0.0",
+    "safetensors>=0.8.0",
+    "laya>=0.4.12",
+    "pyjwt>=2.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.7",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[project.scripts]
+trader = "apps.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "apps",
+    "core",
+    "agents",
+    "orchestration",
+    "market",
+    "scanner",
+    "strategy",
+    "risk",
+    "portfolio",
+    "execution",
+    "monitoring",
+    "memory",
+    "backtesting",
+    "reporting",
+    "database",
+    "integrations",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "RUF", "PIE", "ASYNC"]
+ignore = [
+    "E501",     # Line length violations (handled by soft-wrapping)
+    "B008",     # FastAPI Depends/Security in argument defaults
+    "ASYNC230", # Sync cache file load during initialization
+    "UP042",    # (str, Enum) class inheritance pattern
+    "RUF001",   # Ambiguous unicode characters in string literals (emojis)
+    "RUF002",   # Ambiguous unicode characters in docstrings (en-dashes, emojis)
+    "RUF003",   # Ambiguous unicode characters in comments
+    "W293",     # Blank line contains whitespace
+    "B904",     # Exception chaining in HTTP handler mapping
+    "ASYNC240", # Sync os.path checks in static file / template routes
+]

@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>'AGENT OFFICE' — Self-Growing AI Teams in a Pixel-Art Virtual Office</title>
+  <meta name="description" content="Pixel-art virtual office for autonomous multi-agent quantitative trading and intelligence.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&family=VT323&display=swap" rel="stylesheet">
+  
+  <style>
+    /* ==========================================================================
+       'AGENT OFFICE' — 16-BIT PIXEL ART VIRTUAL OFFICE STYLESHEET
+       ========================================================================== */
+    :root {
+      --wood-floor: #d9935b;
+      --wood-floor-dark: #b8733b;
+      --arcade-yellow: #fde047;
+      --arcade-cyan: #38bdf8;
+      --arcade-green: #4ade80;
+      --arcade-pink: #f472b6;
+      --arcade-purple: #c084fc;
+      --arcade-red: #f87171;
+      --arcade-gold: #fbbf24;
+      --ui-bg: #1e293b;
+      --ui-border: #475569;
+      --ui-text: #f8fafc;
+      --font-pixel: 'Press Start 2P', monospace;
+      --font-body: 'VT323', 'Silkscreen', monospace;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #0f172a;
+      font-family: var(--font-body);
+      color: var(--ui-text);
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      image-rendering: pixelated;
+    }
+
+    /* TOP HEADER TITLE BANNER */
+    .pixel-main-header {
+      background: #090d16;
+      border-bottom: 4px solid #1e293b;
+      padding: 10px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      z-index: 20;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+      flex-shrink: 0;
+    }
+
+    .header-title-container {
+      text-align: center;
+      margin-bottom: 6px;
+    }
+
+    .pixel-brand-title {
+      font-family: var(--font-pixel);
+      font-size: 28px;
+      color: #facc15;
+      text-shadow: 
+        3px 3px 0px #e11d48,
+        -2px -2px 0px #0284c7,
+        4px 4px 0px #000000;
+      letter-spacing: 2px;
+      margin-bottom: 4px;
+      display: inline-block;
+      transform: scaleY(1.05);
+    }
+
+    .pixel-brand-subtitle {
+      font-family: var(--font-pixel);
+      font-size: 13px;
+      color: #67e8f9;
+      text-shadow: 2px 2px 0px #0369a1, 0 0 8px rgba(103, 232, 249, 0.4);
+      letter-spacing: 1px;
+    }
+
+    /* ARCADE ACTION BUTTONS */
+    .pixel-action-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 4px;
+    }
+
+    .pixel-btn {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 2px solid #64748b;
+      box-shadow: 2px 2px 0px #000000, inset 1px 1px 0px #475569;
+      font-family: var(--font-pixel);
+      font-size: 9px;
+      padding: 7px 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-decoration: none;
+      transition: all 0.1s ease;
+    }
+
+    .pixel-btn:hover {
+      background: #334155;
+      transform: translate(-1px, -1px);
+      box-shadow: 3px 3px 0px #000000;
+    }
+
+    .pixel-btn:active {
+      transform: translate(1px, 1px);
+      box-shadow: 1px 1px 0px #000000;
+    }
+
+    .btn-new-hire {
+      background: #047857;
+      border-color: #10b981;
+      color: #ecfdf5;
+      box-shadow: 2px 2px 0px #000000, 0 0 10px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-simulate {
+      background: #0369a1;
+      border-color: #38bdf8;
+      color: #f0f9ff;
+    }
+
+    .btn-danger {
+      background: #991b1b;
+      border-color: #ef4444;
+      color: #fef2f2;
+    }
+
+    /* TELEMETRY STRIP */
+    .pixel-telemetry-strip {
+      display: flex;
+      gap: 14px;
+      position: absolute;
+      right: 20px;
+      top: 14px;
+      font-size: 15px;
+    }
+
+    .telemetry-pill {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #334155;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .t-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .live-green { background: #10b981; box-shadow: 0 0 8px #10b981; }
+    .live-cyan { background: #06b6d4; box-shadow: 0 0 8px #06b6d4; }
+    .live-gold { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    .live-purple { background: #a855f7; box-shadow: 0 0 8px #a855f7; }
+
+    /* MAIN STAGE & CANVAS */
+    .pixel-office-stage {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 140px);
+      min-height: 480px;
+      background: #0f172a;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #pixelOfficeCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #0a0e17;
+      image-rendering: pixelated;
+    }
+
+    /* FLOATING EVENT BUBBLE */
+    .pixel-event-bubble {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      border: 2px solid #38bdf8;
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.4), 3px 3px 0px #000000;
+      padding: 6px 16px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-pixel);
+      font-size: 9px;
+      color: #e0f2fe;
+      z-index: 10;
+      pointer-events: none;
+      animation: pulseBubble 3s infinite ease-in-out;
+    }
+
+    @keyframes pulseBubble {
+      0%, 100% { transform: translateX(-50%) scale(1); }
+      50% { transform: translateX(-50%) scale(1.02); }
+    }
+
+    /* BOTTOM BANNER */
+    .pixel-bottom-banner {
+      background: #090d16;
+      border-top: 4px solid #1e293b;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      z-index: 20;
+      flex-shrink: 0;
+    }
+
+    .banner-content {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 1200px;
+    }
+
+    .banner-tagline {
+      font-family: var(--font-pixel);
+      font-size: 11px;
+      color: #f8fafc;
+      letter-spacing: 1px;
+      text-shadow: 2px 2px 0px #000000;
+    }
+
+    .memory-persistence-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #1e293b;
+      border: 2px solid #38bdf8;
+      padding: 5px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      box-shadow: 2px 2px 0px #000000;
+      transition: all 0.2s ease;
+    }
+
+    .memory-persistence-badge:hover {
+      background: #0369a1;
+      border-color: #67e8f9;
+      transform: translateY(-2px);
+    }
+
+    .badge-label {
+      font-family: var(--font-pixel);
+      font-size: 9px;
+      color: #38bdf8;
+    }
+
+    /* MODAL OVERLAYS */
+    .pixel-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(4px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .pixel-modal-overlay.active {
+      display: flex !important;
+    }
+
+    .pixel-modal-card {
+      background: #0f172a;
+      border: 4px solid #38bdf8;
+      box-shadow: 8px 8px 0px #000000, 0 0 25px rgba(56, 189, 248, 0.4);
+      width: 90%;
+      max-width: 620px;
+      max-height: 85vh;
+      overflow-y: auto;
+      border-radius: 4px;
+      padding: 18px;
+      position: relative;
+      font-family: var(--font-body);
+    }
+
+    .wide-card { max-width: 820px; }
+    .danger-card { border-color: #ef4444; }
+
+    .pixel-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #334155;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+
+    .modal-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .modal-agent-avatar {
+      font-size: 28px;
+      background: #1e293b;
+      border: 2px solid #64748b;
+      padding: 4px;
+      border-radius: 4px;
+    }
+
+    .modal-agent-name {
+      font-family: var(--font-pixel);
+      font-size: 14px;
+      color: #fde047;
+    }
+
+    .modal-agent-role {
+      font-size: 14px;
+      color: #94a3b8;
+    }
+
+    .pixel-close-btn {
+      background: #ef4444;
+      color: #ffffff;
+      border: 2px solid #7f1d1d;
+      font-family: var(--font-pixel);
+      font-size: 11px;
+      padding: 5px 9px;
+      cursor: pointer;
+    }
+
+    .modal-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .stat-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 6px;
+      text-align: center;
+    }
+
+    .stat-label {
+      display: block;
+      font-size: 10px;
+      color: #64748b;
+      font-family: var(--font-pixel);
+      margin-bottom: 4px;
+    }
+
+    .stat-val {
+      font-size: 15px;
+      font-weight: bold;
+    }
+
+    .text-green { color: #4ade80; }
+    .text-danger { color: #f87171; }
+
+    .section-heading {
+      font-family: var(--font-pixel);
+      font-size: 10px;
+      color: #38bdf8;
+      margin-bottom: 6px;
+    }
+
+    .thought-box {
+      background: #1e293b;
+      border: 1px solid #475569;
+      padding: 10px;
+      font-size: 16px;
+      line-height: 1.4;
+      color: #e2e8f0;
+      margin-bottom: 14px;
+    }
+
+    .task-badge {
+      background: #0284c7;
+      color: #ffffff;
+      padding: 6px 10px;
+      border: 1px solid #38bdf8;
+      font-family: var(--font-pixel);
+      font-size: 9px;
+      margin-bottom: 14px;
+    }
+
+    .chat-history-box {
+      background: #020617;
+      border: 1px solid #334155;
+      height: 120px;
+      overflow-y: auto;
+      padding: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 15px;
+    }
+
+    .chat-msg {
+      padding: 5px 8px;
+      border-radius: 3px;
+    }
+
+    .user-msg { background: #0369a1; align-self: flex-end; }
+    .agent-msg { background: #1e293b; border-left: 3px solid #38bdf8; align-self: flex-start; }
+    .system-msg { color: #94a3b8; font-style: italic; font-size: 13px; }
+
+    .chat-input-form {
+      display: flex;
+      gap: 6px;
+    }
+
+    .pixel-input {
+      flex: 1;
+      background: #1e293b;
+      border: 2px solid #475569;
+      color: #f8fafc;
+      padding: 6px 10px;
+      font-family: var(--font-body);
+      font-size: 16px;
+    }
+
+    .btn-send { background: #0284c7; border-color: #38bdf8; }
+
+    /* REAL-TIME WORK INSPECTOR STYLES */
+    .live-work-container {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 12px;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    }
+    .work-target-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .work-symbol-badge {
+      background: #0369a1;
+      color: #e0f2fe;
+      border: 1px solid #38bdf8;
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-family: var(--font-pixel);
+      font-size: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .work-op-box {
+      background: #090d16;
+      border-left: 3px solid #facc15;
+      padding: 8px 10px;
+      font-size: 14px;
+      line-height: 1.4;
+      color: #fef08a;
+      margin-bottom: 8px;
+      font-family: var(--font-body);
+    }
+    .live-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .metric-chip {
+      background: #0b1329;
+      border: 1px solid #1e3a8a;
+      padding: 6px;
+      border-radius: 3px;
+    }
+    .metric-chip-label {
+      font-size: 9px;
+      color: #94a3b8;
+      display: block;
+      margin-bottom: 2px;
+      font-family: var(--font-pixel);
+    }
+    .metric-chip-val {
+      font-size: 12px;
+      color: #38bdf8;
+      font-weight: bold;
+    }
+    .action-tools-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .action-tool-btn {
+      background: #1e293b;
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      padding: 4px 8px;
+      font-size: 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: var(--font-pixel);
+      transition: all 0.15s;
+    }
+    .action-tool-btn:hover {
+      background: #0284c7;
+      color: #ffffff;
+    }
+    .quick-prompts-row {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .quick-prompt-pill {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #94a3b8;
+      padding: 2px 8px;
+      font-size: 11px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .quick-prompt-pill:hover {
+      border-color: #38bdf8;
+      color: #e0f2fe;
+      background: #0369a1;
+    }
+
+    .pixel-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .pixel-table th, .pixel-table td {
+      border: 1px solid #334155;
+      padding: 6px 10px;
+      text-align: left;
+    }
+
+    .pixel-table th {
+      background: #1e293b;
+      font-family: var(--font-pixel);
+      font-size: 9px;
+      color: #38bdf8;
+    }
+
+    @media (max-width: 900px) {
+      .pixel-telemetry-strip { display: none; }
+      .pixel-brand-title { font-size: 20px; }
+      .pixel-brand-subtitle { font-size: 9px; }
+      .banner-tagline { font-size: 9px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP HEADER TITLE BANNER (EXACTLY AS IN IMAGE) -->
+  <header class="pixel-main-header">
+    <div class="header-title-container">
+      <h1 class="pixel-brand-title">'AGENT OFFICE'</h1>
+      <h2 class="pixel-brand-subtitle">EARN TO SURVIVE & COMPOUND TO THRIVE — AUTONOMOUS AI TRADING FLOOR</h2>
+    </div>
+
+    <!-- ARCADE ACTION BUTTONS -->
+    <div class="pixel-action-bar">
+      <button class="pixel-btn btn-premarket" id="btnPreMarket" onclick="openPreMarketModal()" title="View Pre-Market Report & AI Agent Readiness">
+        <span class="p-icon">🌅</span> PRE-MARKET (<span id="premarketOpeningBadge">READY</span>)
+      </button>
+      <button class="pixel-btn" id="btnViewModeSwitch" onclick="switchOfficeViewMode(Office3D.is3DActive ? '2d' : '3d')" style="background:#065f46; border-color:#10b981; color:#fff;" title="Switch between 3D Classic and 2D Retro view">
+        🏛️ VIEW: 3D CLASSIC
+      </button>
+      <button class="pixel-btn btn-new-hire" id="btnSpawnAgent" title="Hire a new AI Agent">
+        <span class="p-icon">🎓</span> + NEW HIRE!
+      </button>
+      <button class="pixel-btn" id="btnLiveDaemon" onclick="toggleAutonomousDaemon()" style="background:#334155; color:#fff;" title="Start/Stop Continuous Autonomous Trading Loop">
+        <span class="p-icon">🤖</span> DAEMON: <span id="daemonStatusBadge">STANDBY</span>
+      </button>
+      <button class="pixel-btn btn-simulate" id="btnSimulate" title="Simulate multi-agent collaboration workflow">
+        <span class="p-icon">⚡</span> SIMULATE FLOW
+      </button>
+      <button class="pixel-btn btn-audio" id="btnAudioToggle" title="Toggle 8-bit sound effects">
+        <span class="p-icon">🔊</span> SFX: ON
+      </button>
+      <button class="pixel-btn" id="btnToggleFlows" onclick="toggleFlows()" style="background:#1e293b; color:#38bdf8;" title="Toggle Data Flow Lines">
+        <span class="p-icon">📡</span> DATA PIPES: ON
+      </button>
+      <button class="pixel-btn btn-roster" id="btnRoster" onclick="openRosterModal()">
+        <span class="p-icon">👥</span> ROSTER (<span id="agentCountBadge">30</span>)
+      </button>
+      <a href="/daily-report" class="pixel-btn" style="background:#1e293b; color:#38bdf8;" title="View Comprehensive End-of-Day Trading Report">
+        <span class="p-icon">📑</span> EOD REPORT
+      </a>
+      <a href="/" class="pixel-btn btn-classic" title="Return to Live Trading Dashboard">
+        <span class="p-icon">📊</span> DASHBOARD
+      </a>
+      <button class="pixel-btn btn-danger" id="btnKillSwitch" onclick="openKillModal()">
+        <span class="p-icon">⛔</span> KILL SWITCH
+      </button>
+    </div>
+
+    <!-- LIVE TELEMETRY CHIPS -->
+    <div class="pixel-telemetry-strip">
+      <div class="telemetry-pill" id="pillMarketPhase"><span class="t-dot live-cyan" id="marketPhaseDot"></span> PHASE: <b id="telemetryMarketPhase">PRE-MARKET READY</b></div>
+      <div class="telemetry-pill"><span class="t-dot live-green"></span> BROKER: <b>ANGELONE (AACJ120032)</b></div>
+      <div class="telemetry-pill"><span class="t-dot live-gold"></span> MARGIN: <b id="telemetryMargin">₹593.32</b></div>
+      <div class="telemetry-pill"><span class="t-dot live-purple"></span> RISK: <b id="telemetryRisk">14/14 PASS</b></div>
+    </div>
+  </header>
+
+  <!-- MAIN 3D & 2D VIRTUAL OFFICE STAGE -->
+  <main class="pixel-office-stage" style="position:relative;">
+    <!-- 3D WebGL Three.js Container -->
+    <div id="office3DContainer" style="width:100%; height:100%; position:absolute; top:0; left:0; z-index:1;"></div>
+
+    <!-- 3D Camera & Director Toolbar -->
+    <div id="office3DControlsBar" style="position:absolute; top:12px; left:16px; z-index:15; display:flex; gap:6px; flex-wrap:wrap; background:rgba(10,14,23,0.85); backdrop-filter:blur(6px); border:1px solid #d4af37; padding:6px 10px; border-radius:4px; box-shadow:0 4px 15px rgba(0,0,0,0.6);">
+      <span style="font-family:var(--font-pixel); font-size:8px; color:#facc15; display:flex; align-items:center; margin-right:4px;">🎥 3D DIRECTOR:</span>
+      <button class="pixel-btn" onclick="set3DCameraPreset('isometric')" style="padding:4px 8px; font-size:8px;">🏛️ ISOMETRIC</button>
+      <button class="pixel-btn" onclick="set3DCameraPreset('warroom')" style="padding:4px 8px; font-size:8px;">⚔️ WAR ROOM</button>
+      <button class="pixel-btn" onclick="set3DCameraPreset('quant')" style="padding:4px 8px; font-size:8px;">📈 QUANT LAB</button>
+      <button class="pixel-btn" onclick="set3DCameraPreset('risk')" style="padding:4px 8px; font-size:8px;">🛡️ RISK DESK</button>
+      <button class="pixel-btn" onclick="set3DCameraPreset('executive')" style="padding:4px 8px; font-size:8px;">👔 EXECUTIVE</button>
+      <button class="pixel-btn" id="btnCinematicTour" onclick="toggleCinematicTour()" style="padding:4px 8px; font-size:8px; color:#38bdf8;">🎬 CINEMATIC TOUR</button>
+    </div>
+
+    <!-- 2D Canvas (Hidden by default when 3D is active) -->
+    <canvas id="pixelOfficeCanvas" style="display:none;"></canvas>
+    
+    <!-- FLOATING LIVE EVENT POPUP TICKER -->
+    <div class="pixel-event-bubble" id="pixelEventBubble" style="z-index:20;">
+      <span class="bubble-icon">💬</span>
+      <span class="bubble-text" id="pixelBubbleText">PM_AGENT assigned candidate research to DEV_AGENT</span>
+    </div>
+  </main>
+
+
+  <!-- BOTTOM BANNER (EXACTLY AS IN IMAGE) -->
+  <footer class="pixel-bottom-banner">
+    <div class="banner-content">
+      <span class="banner-tagline">⚔️ MANDATE: EARN TO SURVIVE & COMPOUND TO THRIVE | 100% AUTONOMOUS GATED EXECUTION</span>
+      <div class="memory-persistence-badge" id="memoryBadge" onclick="openMemoryModal()">
+        <span class="robot-icon">🤖</span>
+        <span class="save-icon">💾</span>
+        <span class="badge-label">MEMORY & PERSISTENCE</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- RETRO AGENT INSPECTOR MODAL (HIDDEN INLINE BY DEFAULT) -->
+  <div class="pixel-modal-overlay" id="agentModalOverlay" style="display:none;" onclick="closeAgentModal(event)">
+    <div class="pixel-modal-card" onclick="event.stopPropagation()">
+      <div class="pixel-modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-agent-avatar" id="modalAvatar">👔</span>
+          <div>
+            <h3 class="modal-agent-name" id="modalAgentName">PM_AGENT</h3>
+            <span class="modal-agent-role" id="modalAgentRole">Chief Project Manager & Decision Orchestrator</span>
+          </div>
+        </div>
+        <button class="pixel-close-btn" onclick="closeAgentModal()">✖</button>
+      </div>
+
+      <div class="pixel-modal-body">
+        <div class="modal-stats-grid">
+          <div class="stat-box">
+            <span class="stat-label">STATUS</span>
+            <span class="stat-val status-badge" id="modalStatus">THINKING</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">DEPARTMENT</span>
+            <span class="stat-val" id="modalDept">Executive Leadership</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">CONFIDENCE</span>
+            <span class="stat-val text-green" id="modalConfidence">94.8%</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">CYCLES RUN</span>
+            <span class="stat-val" id="modalCycles">142</span>
+          </div>
+        </div>
+
+        <!-- 🎯 WHAT THIS AGENT IS WORKING ON AT THIS MOMENT -->
+        <div class="live-work-container">
+          <div class="work-target-header">
+            <span class="section-heading" style="margin:0;">🎯 WORKING ON AT THIS MOMENT</span>
+            <span class="work-symbol-badge" id="modalActiveSymbolBadge">
+              <span class="t-dot live-green"></span>
+              <span id="modalActiveSymbol">RELIANCE.NS</span>
+              <span id="modalActiveLtp" style="color:#fde047; font-weight:bold; margin-left:4px;">₹1,226.00 (+0.56%)</span>
+            </span>
+          </div>
+          
+          <div class="work-op-box" id="modalCurrentOperation">
+            Computing 15m Kaufman Adaptive Moving Average (KAMA), RSI(14) momentum, and EMA 20/50 Golden Cross.
+          </div>
+
+          <!-- Dynamic Live Indicator / Telemetry Chips -->
+          <div class="section-heading">📊 LIVE COMPUTED METRICS & INDICATORS</div>
+          <div class="live-metrics-grid" id="modalLiveMetricsGrid">
+            <!-- Dynamically injected chips -->
+          </div>
+
+          <!-- Recommendation / Output -->
+          <div id="modalRecommendationRow" style="display:flex; justify-content:space-between; align-items:center; background:#111827; border:1px solid #374151; padding:6px 10px; margin-bottom:8px; border-radius:3px;">
+            <span style="font-size:11px; font-family:var(--font-pixel); color:#9ca3af;">LATEST OUTPUT:</span>
+            <span id="modalRecommendationVal" style="font-size:12px; font-weight:bold; color:#4ade80;">BUY (Conviction: 88%) | Target: ₹1,245.00 | SL: ₹1,215.00</span>
+          </div>
+
+          <!-- Action Tools -->
+          <div class="section-heading" style="margin-top:6px;">⚡ TRIGGER LIVE AGENT ACTION</div>
+          <div class="action-tools-row" id="modalActionButtons">
+            <!-- Dynamically injected buttons -->
+          </div>
+        </div>
+
+        <div class="thought-stream-section">
+          <div class="section-heading">🧠 AGENT REASONING & THOUGHT</div>
+          <div class="thought-box" id="modalThought">
+            "Coordinating pre-market candidate evaluation for Nifty 50 universe..."
+          </div>
+        </div>
+
+        <div class="recent-actions-section" style="margin-bottom:12px;">
+          <div class="section-heading">📜 RECENT TIMELINE / STEPS EXECUTED</div>
+          <div id="modalRecentActions" style="background:#090d16; border:1px solid #1e293b; padding:6px 10px; font-size:12px; color:#94a3b8; display:flex; flex-direction:column; gap:4px; max-height:80px; overflow-y:auto;">
+            <!-- Injected timestamps and steps -->
+          </div>
+        </div>
+
+        <div class="agent-chat-section">
+          <div class="section-heading">💬 INTERACTIVE AGENT CHAT</div>
+          <div class="quick-prompts-row">
+            <span class="quick-prompt-pill" onclick="quickAskAgent('What are you analyzing right now?')">What are you analyzing right now?</span>
+            <span class="quick-prompt-pill" onclick="quickAskAgent('Show your calculated evidence')">Show your evidence</span>
+            <span class="quick-prompt-pill" onclick="quickAskAgent('What is the stop loss & target?')">Stop Loss & Target</span>
+          </div>
+          <div class="chat-history-box" id="modalChatHistory">
+            <div class="chat-msg system-msg">Connected to live AI Agent memory. Type your query below.</div>
+          </div>
+          <form class="chat-input-form" onsubmit="sendAgentChat(event)">
+            <input type="text" id="agentChatInput" class="pixel-input" placeholder="Ask this agent anything..." autocomplete="off">
+            <button type="submit" class="pixel-btn btn-send">SEND</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RETRO ROSTER MODAL -->
+  <div class="pixel-modal-overlay" id="rosterModalOverlay" style="display:none;" onclick="closeRosterModal(event)">
+    <div class="pixel-modal-card wide-card" onclick="event.stopPropagation()">
+      <div class="pixel-modal-header">
+        <h3 class="modal-agent-name">👥 AI WORKFORCE ROSTER</h3>
+        <button class="pixel-close-btn" onclick="closeRosterModal()">✖</button>
+      </div>
+      <div class="pixel-modal-body">
+        <table class="pixel-table">
+          <thead>
+            <tr>
+              <th>AGENT</th>
+              <th>ROLE</th>
+              <th>STATUS</th>
+              <th>CONFIDENCE</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="rosterTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRE-MARKET REPORT & AI AGENT READINESS MODAL -->
+  <div class="pixel-modal-overlay" id="premarketModalOverlay" style="display:none;" onclick="closePreMarketModal(event)">
+    <div class="pixel-modal-card wide-card" onclick="event.stopPropagation()">
+      <div class="pixel-modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-agent-avatar">🌅</span>
+          <div>
+            <h3 class="modal-agent-name" style="color:#fde047;">PRE-MARKET INTELLIGENCE & AI READINESS REPORT</h3>
+            <span class="modal-agent-role" id="pmReportSubtitle">09:15 IST OPENING BELL READINESS • ZERO-HUMAN-INVOLVEMENT</span>
+          </div>
+        </div>
+        <button class="pixel-close-btn" onclick="closePreMarketModal()">✖</button>
+      </div>
+
+      <div class="pixel-modal-body">
+        <!-- COUNTDOWN BANNER -->
+        <div style="background:#0284c7; border:2px solid #38bdf8; padding:10px 14px; border-radius:4px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-family:var(--font-pixel); font-size:11px; color:#ffffff; margin-bottom:4px;">⏱️ MARKET TIMING & COUNTDOWN</div>
+            <div style="font-size:16px; color:#f0f9ff;" id="pmCountdownText">Checking opening countdown...</div>
+          </div>
+          <button class="pixel-btn btn-simulate" onclick="refreshPreMarketIntel()" id="btnRefreshIntel" style="margin:0;">
+            ⚡ RE-ARM & REFRESH
+          </button>
+        </div>
+
+        <!-- READINESS CHECKLIST -->
+        <div class="section-heading">🛡️ PRE-MARKET 5-POINT SYSTEM AUDIT & READINESS</div>
+        <div class="modal-stats-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom:14px;" id="pmChecklistGrid">
+          <div class="stat-box">
+            <span class="stat-label">ANGELONE RMS</span>
+            <span class="stat-val text-green" id="chkBroker">CONNECTED</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">GLOBAL MACRO</span>
+            <span class="stat-val text-green" id="chkMacro">SYNCED</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">NEWS INTEL</span>
+            <span class="stat-val text-green" id="chkNews">PROCESSED</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">14-PT RISK GATE</span>
+            <span class="stat-val text-green" id="chkRisk">ARMED</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">AI AGENT ROSTER</span>
+            <span class="stat-val text-green" id="chkAgents">30/30 READY</span>
+          </div>
+        </div>
+
+        <!-- MACRO OVERVIEW -->
+        <div class="section-heading">🌐 GLOBAL CUES & GIFT NIFTY PROJECTION</div>
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-bottom:14px;" id="pmMacroGrid">
+          <div class="stat-box">
+            <span class="stat-label">GLOBAL BIAS</span>
+            <span class="stat-val text-green" id="pmGlobalSentiment">RISK_ON</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">GIFT NIFTY GAP</span>
+            <span class="stat-val text-green" id="pmGiftGap">+48.0 PTS</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">INDIA VIX</span>
+            <span class="stat-val" style="color:#38bdf8;" id="pmIndiaVix">12.80</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">FII / DII FLOWS</span>
+            <span class="stat-val text-green" id="pmFlows">+₹2,100 Cr</span>
+          </div>
+        </div>
+
+        <!-- PIVOT LEVELS -->
+        <div class="section-heading">📍 KEY INSTITUTIONAL PIVOTS (NIFTY & BANK NIFTY)</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+          <div style="background:#1e293b; border:1px solid #334155; padding:8px 12px;">
+            <div style="font-family:var(--font-pixel); font-size:10px; color:#38bdf8; margin-bottom:6px;">NIFTY 50 PIVOTS</div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;">
+              <span>S2: <b id="niftyS2">24800</b></span>
+              <span>S1: <b id="niftyS1">24950</b></span>
+              <span style="color:#fde047;">PIVOT: <b id="niftyPivot">25050</b></span>
+              <span>R1: <b id="niftyR1">25180</b></span>
+              <span>R2: <b id="niftyR2">25300</b></span>
+            </div>
+          </div>
+          <div style="background:#1e293b; border:1px solid #334155; padding:8px 12px;">
+            <div style="font-family:var(--font-pixel); font-size:10px; color:#38bdf8; margin-bottom:6px;">BANK NIFTY PIVOTS</div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;">
+              <span>S2: <b id="bnS2">51200</b></span>
+              <span>S1: <b id="bnS1">51500</b></span>
+              <span style="color:#fde047;">PIVOT: <b id="bnPivot">51800</b></span>
+              <span>R1: <b id="bnR1">52150</b></span>
+              <span>R2: <b id="bnR2">52500</b></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- MORNING FOCUS SETUPS TABLE -->
+        <div class="section-heading">🎯 MORNING FOCUS SETUPS (QUANT QUALIFIED)</div>
+        <table class="pixel-table" style="margin-bottom:14px;">
+          <thead>
+            <tr>
+              <th>SYMBOL</th>
+              <th>SETUP TYPE</th>
+              <th>TRIGGER</th>
+              <th>TARGET</th>
+              <th>STOP LOSS</th>
+              <th>CATALYST / NOTES</th>
+            </tr>
+          </thead>
+          <tbody id="pmSetupsTableBody">
+            <tr>
+              <td><b style="color:#fde047;">RELIANCE.NS</b></td>
+              <td>15m 20-EMA Breakout with Volume</td>
+              <td>₹1,226.00</td>
+              <td class="text-green">₹1,250.00</td>
+              <td class="text-danger">₹1,214.00</td>
+              <td>Green Energy Expansion & Deal Catalyst</td>
+            </tr>
+            <tr>
+              <td><b style="color:#fde047;">TCS.NS</b></td>
+              <td>Opening Gap Continuation</td>
+              <td>₹2,085.00</td>
+              <td class="text-green">₹2,130.00</td>
+              <td class="text-danger">₹2,060.00</td>
+              <td>$450M Cloud Mega-Deal Announcement</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- STOCKS TO AVOID & RISK EVENTS -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div style="background:#1e293b; border:1px solid #7f1d1d; padding:8px 12px;">
+            <div style="font-family:var(--font-pixel); font-size:9px; color:#f87171; margin-bottom:4px;">⚠️ STOCKS TO AVOID / BLACKLIST</div>
+            <ul style="font-size:14px; color:#fca5a5; padding-left:16px;" id="pmAvoidList">
+              <li>IDEA.NS (High debt overhang / ASM Stage 1)</li>
+              <li>YESBANK.NS (Low beta retail chop / High volatility)</li>
+            </ul>
+          </div>
+          <div style="background:#1e293b; border:1px solid #0369a1; padding:8px 12px;">
+            <div style="font-family:var(--font-pixel); font-size:9px; color:#38bdf8; margin-bottom:4px;">📅 SCHEDULED MACRO EVENTS</div>
+            <ul style="font-size:14px; color:#bae6fd; padding-left:16px;" id="pmEventsList">
+              <li>11:00 IST - India Monthly CPI Inflation Data</li>
+              <li>15:30 IST - Weekly F&O Expiry Settlement</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js 3D Engine & OrbitControls -->
+  <script src="/static/three.min.js"></script>
+  <script src="/static/OrbitControls.js"></script>
+
+  <!-- 2D Retro Engine -->
+  <script src="/static/office.js"></script>
+
+  <!-- 3D Classic Institutional Engine -->
+  <script src="/static/office3d.js"></script>
+
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      // Auto-initialize 3D Classic Animated Office
+      setTimeout(() => {
+        if (typeof initOffice3D === 'function') {
+          initOffice3D();
+          switchOfficeViewMode('3d');
+        }
+      }, 100);
+    });
+  </script>
+
+</body>
+</html>

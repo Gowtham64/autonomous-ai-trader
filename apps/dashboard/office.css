@@ -1,0 +1,530 @@
+/* ==========================================================================
+   'AGENT OFFICE' — RETRO 16-BIT PIXEL-ART VIRTUAL OFFICE STYLESHEET
+   Matches reference visual layout: Warm wood flooring, dual workstations,
+   pixel avatars, glowing auras, animated collaboration arrows, and retro typography.
+   ========================================================================== */
+
+:root {
+  --wood-floor: #d9935b;
+  --wood-floor-dark: #b8733b;
+  --wood-floor-light: #f5b984;
+  --wall-bg: #809bb0;
+  --wall-trim: #48647c;
+  
+  --arcade-yellow: #fde047;
+  --arcade-cyan: #38bdf8;
+  --arcade-green: #4ade80;
+  --arcade-pink: #f472b6;
+  --arcade-purple: #c084fc;
+  --arcade-red: #f87171;
+  --arcade-gold: #fbbf24;
+
+  --ui-bg: #1e293b;
+  --ui-border: #475569;
+  --ui-text: #f8fafc;
+
+  --font-pixel-heading: 'Press Start 2P', 'VT323', monospace;
+  --font-pixel-body: 'VT323', 'Silkscreen', monospace;
+  --font-modern: 'Inter', sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body.pixel-office-body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #0f172a;
+  font-family: var(--font-pixel-body);
+  color: var(--ui-text);
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  image-rendering: pixelated;
+}
+
+/* ==========================================================================
+   TOP HEADER TITLE BANNER (EXACT REPLICA OF SCREENSHOT)
+   ========================================================================== */
+
+.pixel-main-header {
+  background: #090d16;
+  border-bottom: 4px solid #1e293b;
+  padding: 10px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 20;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+
+.header-title-container {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.pixel-brand-title {
+  font-family: var(--font-pixel-heading);
+  font-size: 26px;
+  color: #facc15;
+  text-shadow: 
+    3px 3px 0px #e11d48,
+    -2px -2px 0px #0284c7,
+    4px 4px 0px #000000;
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+  display: inline-block;
+  transform: scaleY(1.05);
+}
+
+.pixel-brand-subtitle {
+  font-family: var(--font-pixel-heading);
+  font-size: 13px;
+  color: #67e8f9;
+  text-shadow: 2px 2px 0px #0369a1, 0 0 10px rgba(103, 232, 249, 0.5);
+  letter-spacing: 1px;
+}
+
+/* ARCADE ACTION BUTTONS */
+.pixel-action-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.pixel-btn {
+  background: #1e293b;
+  color: #f8fafc;
+  border: 2px solid #64748b;
+  box-shadow: 2px 2px 0px #0f172a, inset -2px -2px 0px #0f172a, inset 2px 2px 0px #475569;
+  font-family: var(--font-pixel-heading);
+  font-size: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  transition: all 0.1s ease;
+}
+
+.pixel-btn:hover {
+  background: #334155;
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px #000000;
+}
+
+.pixel-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.btn-new-hire {
+  background: #047857;
+  border-color: #10b981;
+  color: #ecfdf5;
+  box-shadow: 2px 2px 0px #064e3b, 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.btn-simulate {
+  background: #0369a1;
+  border-color: #38bdf8;
+  color: #f0f9ff;
+}
+
+.btn-danger {
+  background: #991b1b;
+  border-color: #ef4444;
+  color: #fef2f2;
+}
+
+/* TELEMETRY STRIP */
+.pixel-telemetry-strip {
+  display: flex;
+  gap: 16px;
+  position: absolute;
+  right: 24px;
+  top: 18px;
+  font-size: 14px;
+}
+
+.telemetry-pill {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  padding: 4px 10px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.t-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.live-green { background: #10b981; box-shadow: 0 0 8px #10b981; }
+.live-cyan { background: #06b6d4; box-shadow: 0 0 8px #06b6d4; }
+.live-gold { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+.live-purple { background: #a855f7; box-shadow: 0 0 8px #a855f7; }
+
+/* ==========================================================================
+   MAIN PIXEL ART VIRTUAL OFFICE STAGE & CANVAS
+   ========================================================================== */
+
+.pixel-office-stage {
+  flex: 1;
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 140px);
+  background: #111827;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#pixelOfficeCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -webkit-crisp-edges;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* FLOATING LIVE EVENT BUBBLE */
+.pixel-event-bubble {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #38bdf8;
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.4), 3px 3px 0px #000000;
+  padding: 8px 18px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-pixel-heading);
+  font-size: 10px;
+  color: #e0f2fe;
+  z-index: 10;
+  pointer-events: none;
+  animation: pulseBubble 3s infinite ease-in-out;
+}
+
+@keyframes pulseBubble {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50% { transform: translateX(-50%) scale(1.02); }
+}
+
+/* ==========================================================================
+   BOTTOM BANNER (EXACT REPLICA OF SCREENSHOT)
+   ========================================================================== */
+
+.pixel-bottom-banner {
+  background: #090d16;
+  border-top: 4px solid #1e293b;
+  padding: 12px 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  z-index: 20;
+}
+
+.banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 1200px;
+}
+
+.banner-tagline {
+  font-family: var(--font-pixel-heading);
+  font-size: 13px;
+  color: #f8fafc;
+  letter-spacing: 1px;
+  text-shadow: 2px 2px 0px #000000;
+}
+
+.memory-persistence-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1e293b;
+  border: 2px solid #38bdf8;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0px #000000;
+  transition: all 0.2s ease;
+}
+
+.memory-persistence-badge:hover {
+  background: #0369a1;
+  border-color: #67e8f9;
+  transform: translateY(-2px);
+}
+
+.badge-label {
+  font-family: var(--font-pixel-heading);
+  font-size: 10px;
+  color: #38bdf8;
+}
+
+/* ==========================================================================
+   RETRO 16-BIT AGENT MODALS
+   ========================================================================== */
+
+.pixel-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+}
+
+.pixel-modal-overlay.active {
+  display: flex;
+}
+
+.pixel-modal-card {
+  background: #0f172a;
+  border: 4px solid #38bdf8;
+  box-shadow: 8px 8px 0px #000000, 0 0 25px rgba(56, 189, 248, 0.4);
+  width: 90%;
+  max-width: 650px;
+  max-height: 85vh;
+  overflow-y: auto;
+  border-radius: 4px;
+  padding: 20px;
+  position: relative;
+  font-family: var(--font-pixel-body);
+}
+
+.wide-card {
+  max-width: 850px;
+}
+
+.danger-card {
+  border-color: #ef4444;
+  box-shadow: 8px 8px 0px #000000, 0 0 25px rgba(239, 68, 68, 0.5);
+}
+
+.pixel-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #334155;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-agent-avatar {
+  font-size: 32px;
+  background: #1e293b;
+  border: 2px solid #64748b;
+  padding: 6px;
+  border-radius: 4px;
+}
+
+.modal-agent-name {
+  font-family: var(--font-pixel-heading);
+  font-size: 16px;
+  color: #fde047;
+}
+
+.modal-agent-role {
+  font-size: 14px;
+  color: #94a3b8;
+}
+
+.pixel-close-btn {
+  background: #ef4444;
+  color: #ffffff;
+  border: 2px solid #7f1d1d;
+  font-family: var(--font-pixel-heading);
+  font-size: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.modal-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.stat-box {
+  background: #1e293b;
+  border: 1px solid #334155;
+  padding: 8px;
+  text-align: center;
+}
+
+.stat-label {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  font-family: var(--font-pixel-heading);
+  margin-bottom: 4px;
+}
+
+.stat-val {
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.text-green { color: #4ade80; }
+.text-danger { color: #f87171; }
+
+.section-heading {
+  font-family: var(--font-pixel-heading);
+  font-size: 11px;
+  color: #38bdf8;
+  margin-bottom: 8px;
+}
+
+.thought-box {
+  background: #1e293b;
+  border: 1px solid #475569;
+  padding: 12px;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.task-badge {
+  background: #0284c7;
+  color: #ffffff;
+  padding: 8px 12px;
+  border: 1px solid #38bdf8;
+  font-family: var(--font-pixel-heading);
+  font-size: 10px;
+  margin-bottom: 16px;
+}
+
+.chat-history-box {
+  background: #020617;
+  border: 1px solid #334155;
+  height: 140px;
+  overflow-y: auto;
+  padding: 10px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.chat-msg {
+  padding: 6px 10px;
+  border-radius: 3px;
+}
+
+.user-msg {
+  background: #0369a1;
+  align-self: flex-end;
+}
+
+.agent-msg {
+  background: #1e293b;
+  border-left: 3px solid #38bdf8;
+  align-self: flex-start;
+}
+
+.system-msg {
+  color: #94a3b8;
+  font-style: italic;
+  font-size: 13px;
+}
+
+.chat-input-form {
+  display: flex;
+  gap: 8px;
+}
+
+.pixel-input {
+  flex: 1;
+  background: #1e293b;
+  border: 2px solid #475569;
+  color: #f8fafc;
+  padding: 8px 12px;
+  font-family: var(--font-pixel-body);
+  font-size: 16px;
+}
+
+.btn-send {
+  background: #0284c7;
+  border-color: #38bdf8;
+}
+
+/* ROSTER TABLE */
+.roster-table-wrap {
+  overflow-x: auto;
+}
+
+.pixel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.pixel-table th, .pixel-table td {
+  border: 1px solid #334155;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.pixel-table th {
+  background: #1e293b;
+  font-family: var(--font-pixel-heading);
+  font-size: 10px;
+  color: #38bdf8;
+}
+
+/* RESPONSIVE DESIGN */
+@media (max-width: 900px) {
+  .pixel-telemetry-strip {
+    display: none;
+  }
+  .pixel-brand-title {
+    font-size: 18px;
+  }
+  .pixel-brand-subtitle {
+    font-size: 10px;
+  }
+  .banner-tagline {
+    font-size: 10px;
+  }
+}

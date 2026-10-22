@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-10-20T09:11:33.078347+00:00",
+  "broker_name": "DeltaExchangeBroker",
+  "client_code": "DELTA_INDIA",
+  "verified_available_margin": 6.82,
+  "verified_cash_balance": 6.82,
+  "verified_open_positions_count": 1,
+  "internal_claimed_pnl": -0.01,
+  "verified_net_account_change": -0.49,
+  "estimated_statutory_and_broker_fees": 0.0,
+  "electricity_and_compute_drag": 0.05,
+  "ground_truth_net_pnl": -0.54,
+  "claim_vs_truth_discrepancy": 0.48,
+  "is_verified": true,
+  "verification_source": "broker-direct-api",
+  "notes": []
+}

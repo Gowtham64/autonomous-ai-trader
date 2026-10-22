@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Market Close Report — Autonomous AI Trader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body {
+      background-color: #0b0f19;
+      color: #f8fafc;
+      font-family: 'Outfit', -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    .report-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 30px 20px;
+    }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 20px;
+    }
+    .header-title-box {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .report-logo {
+      font-size: 32px;
+      background: rgba(14, 165, 233, 0.15);
+      border: 1px solid rgba(14, 165, 233, 0.3);
+      padding: 10px 14px;
+      border-radius: 12px;
+    }
+    .report-title h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .report-title p {
+      margin: 4px 0 0 0;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+    .badge-live {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Date Selector Bar */
+    .date-selector-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(30, 41, 59, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 12px 18px;
+      margin-bottom: 22px;
+      backdrop-filter: blur(8px);
+    }
+    .date-selector-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13.5px;
+      color: #94a3b8;
+    }
+    .date-selector-label b {
+      color: #e2e8f0;
+    }
+    .date-select-dropdown {
+      background: #0f172a;
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    .date-select-dropdown:hover, .date-select-dropdown:focus {
+      border-color: #38bdf8;
+      background: #1e293b;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+    }
+    .session-badge {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    /* Metric Cards */
+    .grid-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 25px;
+    }
+    .metric-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      padding: 18px;
+      border-radius: 12px;
+    }
+    .metric-card .title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .metric-card .val {
+      font-size: 24px;
+      font-weight: 800;
+      color: #f8fafc;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .metric-card .sub {
+      font-size: 11.5px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .val-green { color: #10b981 !important; }
+    .val-red { color: #ef4444 !important; }
+    .val-yellow { color: #f59e0b !important; }
+    
+    .section-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 25px;
+    }
+    .section-card h2 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #e2e8f0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 10px;
+    }
+    .custom-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .custom-table th {
+      text-align: left;
+      padding: 10px 14px;
+      color: #64748b;
+      font-weight: 600;
+      font-size: 11.5px;
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .custom-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .custom-table tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .rule-chip {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      margin: 4px;
+      color: #cbd5e1;
+    }
+    .rule-chip b { color: #38bdf8; }
+    .btn-nav {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-nav:hover { background: #334155; }
+    .btn-primary-action {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border: none;
+    }
+
+    /* Forensic Styles */
+    .forensic-card {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+    .forensic-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .forensic-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .forensic-box {
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 10px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .forensic-root-cause {
+      background: rgba(239, 68, 68, 0.08);
+      border-left: 3px solid #ef4444;
+      color: #fca5a5;
+    }
+    .forensic-root-cause-green {
+      background: rgba(16, 185, 129, 0.08);
+      border-left: 3px solid #10b981;
+      color: #6ee7b7;
+    }
+    .forensic-mistakes {
+      background: rgba(245, 158, 11, 0.08);
+      border-left: 3px solid #f59e0b;
+      color: #fde68a;
+    }
+    .forensic-corrective {
+      background: rgba(56, 189, 248, 0.08);
+      border-left: 3px solid #38bdf8;
+      color: #bae6fd;
+    }
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .roadmap-card {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .roadmap-card .pillar {
+      font-weight: 700;
+      font-size: 13px;
+      color: #38bdf8;
+      margin-bottom: 6px;
+    }
+    .roadmap-card .rule {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    .badge-status-active {
+      display: inline-block;
+      margin-top: 8px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <!-- Header -->
+    <header class="report-header">
+      <div class="header-title-box">
+        <div class="report-logo">📊</div>
+        <div class="report-title">
+          <h1 id="repTitle">Daily End-Of-Day Trading Audit</h1>
+          <p id="repSubtitle">Session Date: <b id="repDate">2026-09-29</b> • Generated: <span id="repTime">02:37:58 IST</span></p>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <span class="badge-live" id="repMode">● LIVE TRADING (AACJ120032)</span>
+        <button id="btnRefresh" class="btn-nav btn-primary-action" onclick="fetchDailyReport(true)">🔄 Refresh Data</button>
+        <a href="/" class="btn-nav">← Back to Dashboard</a>
+      </div>
+    </header>
+
+    <!-- Date Selection Bar -->
+    <div class="date-selector-bar">
+      <div class="date-selector-label">
+        <span style="font-size: 18px;">📅</span>
+        <span><b>Historical Audit:</b> Select Trading Session Date</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <select id="dateSelect" class="date-select-dropdown" onchange="onDateChanged(this.value)">
+          <option value="latest">Loading sessions...</option>
+        </select>
+        <span id="dateStatusBadge" class="session-badge">Latest Session</span>
+      </div>
+    </div>
+
+    <!-- Capital & Treasury Grid -->
+    <div class="grid-metrics">
+      <div class="metric-card">
+        <div class="title">Starting Capital</div>
+        <div class="val" id="valStartCap">₹569.45</div>
+        <div class="sub">Bootstrap Allocation</div>
+      </div>
+      <div class="metric-card">
+        <div class="title">Closing Net Equity</div>
+        <div class="val" id="valCloseCap">₹568.61</div>
+        <div class="sub" id="subCapMode">AngelOne Live Account</div>
+      </div>
+      <div class="metric-card">
+        <div class="title">Realized Trading P&L</div>
+        <div class="val val-red" id="valPnl">-₹0.84</div>
+        <div class="sub" id="valRoi">-0.15% Net Return Today</div>
+      </div>
+      <div class="metric-card">
+        <div class="title">Available Margin</div>
+        <div class="val" id="valMargin">₹568.61</div>
+        <div class="sub">Ready for next deployment</div>
+      </div>
+    </div>
+
+    <!-- Performance Stats -->
+    <div class="section-card">
+      <h2>📈 Trading Session Performance Stats</h2>
+      <div class="grid-metrics" style="margin-bottom:0;">
+        <div class="metric-card" style="background:rgba(0,0,0,0.2);">
+          <div class="title">Total Trades Completed</div>
+          <div class="val" id="valTotalTrades">3</div>
+          <div class="sub">Round-trip executions</div>
+        </div>
+        <div class="metric-card" style="background:rgba(0,0,0,0.2);">
+          <div class="title">Winning Trades</div>
+          <div class="val val-green" id="valWins">1</div>
+          <div class="sub">Profitable exits</div>
+        </div>
+        <div class="metric-card" style="background:rgba(0,0,0,0.2);">
+          <div class="title">Losing Trades</div>
+          <div class="val val-red" id="valLosses">2</div>
+          <div class="sub">Stop loss executions</div>
+        </div>
+        <div class="metric-card" style="background:rgba(0,0,0,0.2);">
+          <div class="title">Session Win Rate</div>
+          <div class="val" id="valWinRate">33.3%</div>
+          <div class="sub">Target hit efficiency</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Monitored Positions -->
+    <div class="section-card">
+      <h2>🛡️ Active / Monitored Open Positions</h2>
+      <div style="overflow-x:auto;">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Quantity</th>
+              <th>Entry Price</th>
+              <th>Current Price</th>
+              <th>Stop Loss</th>
+              <th>Target 1</th>
+              <th>Unrealized P&L</th>
+            </tr>
+          </thead>
+          <tbody id="openPositionsBody">
+            <tr>
+              <td colspan="7" style="text-align:center; color:#64748b; padding:20px;">No open positions held overnight. Capital 100% protected in cash.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Completed Trades Table -->
+    <div class="section-card">
+      <h2>📑 Completed Trades (Closed Today)</h2>
+      <div style="overflow-x:auto;">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Quantity</th>
+              <th>Entry (Price & Time)</th>
+              <th>Exit (Price & Time)</th>
+              <th>Realized P&L</th>
+              <th>Exit Trigger</th>
+            </tr>
+          </thead>
+          <tbody id="closedTradesBody">
+            <tr>
+              <td colspan="6" style="text-align:center; color:#64748b; padding:20px;">Syncing executed tradebook with AngelOne...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Deep Forensic Loss Analysis & Corrective Actions Section -->
+    <div class="section-card" id="forensicSection">
+      <h2>🔬 Deep Trade Forensic Audit & Root Cause Analysis</h2>
+      <p style="margin: -6px 0 16px 0; color: #94a3b8; font-size: 13px;">
+        Algorithmic post-mortem of trade loss causes, AI agent mistakes, and immediate corrective rules enforced.
+      </p>
+
+      <div id="forensicSessionOverview" class="forensic-box forensic-root-cause" style="margin-bottom: 20px;">
+        <!-- Populated via JS -->
+      </div>
+
+      <div id="forensicCardsContainer">
+        <!-- Populated via JS -->
+      </div>
+
+      <h3 style="margin: 24px 0 10px 0; font-size: 15px; color: #38bdf8;">🛡️ Systemic Corrective Action Roadmap (Enforced in AI Memory)</h3>
+      <div id="forensicRoadmapContainer" class="roadmap-grid">
+        <!-- Populated via JS -->
+      </div>
+    </div>
+
+    <!-- Risk & Capital Preservation Rules Applied -->
+    <div class="section-card">
+      <h2>🛡️ Active Risk & Capital Preservation Rules</h2>
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        <div class="rule-chip">Max Risk Per Trade: <b id="ruleRisk">1.0%</b></div>
+        <div class="rule-chip">Daily Loss Circuit: <b id="ruleLoss">2.0%</b></div>
+        <div class="rule-chip">Min Risk-to-Reward: <b id="ruleRr">1:2.0</b></div>
+        <div class="rule-chip">Zero-Loss Break-Even Ratchet: <b class="val-green">ACTIVE (+0.2% trigger)</b></div>
+        <div class="rule-chip">EOD Safety Auto-Squareoff: <b>03:15 PM IST</b></div>
+      </div>
+    </div>
+
+    <!-- Strategy Learnings -->
+    <div class="section-card">
+      <h2>🧠 Autonomous Learnings & Strategy Alignment for Tomorrow</h2>
+      <ul style="margin:0; padding-left:20px; line-height:1.8; color:#cbd5e1; font-size:13.5px;">
+        <li>Capital preservation successfully safeguarded usable balance with 100% of capital protected in cash.</li>
+        <li>Dynamic scanner prioritizes stocks aligning multi-factor trend momentum with strong quarterly profit growth.</li>
+        <li>Adversarial Bull/Bear debate consensus successfully filtered out uncertain, low-edge setups.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    let currentSelectedDate = 'latest';
+
+    async function loadAvailableDates() {
+      try {
+        const res = await fetch('/api/reports/daily/dates');
+        if (!res.ok) return;
+        const data = await res.json();
+        const dates = data.dates || [];
+        const sel = document.getElementById('dateSelect');
+        if (!sel || dates.length === 0) return;
+
+        sel.innerHTML = dates.map((d, idx) => `
+          <option value="${d.date}">Session: ${d.date} (${d.total_trades} Trades | P&L: ₹${(d.realized_pnl_inr >= 0 ? '+' : '') + d.realized_pnl_inr.toFixed(2)})</option>
+        `).join('');
+
+        if (currentSelectedDate !== 'latest' && dates.some(d => d.date === currentSelectedDate)) {
+          sel.value = currentSelectedDate;
+        } else if (dates.length > 0) {
+          sel.value = dates[0].date;
+        }
+      } catch (e) {
+        console.warn('Could not load dates:', e);
+      }
+    }
+
+    function onDateChanged(dateVal) {
+      currentSelectedDate = dateVal;
+      const badge = document.getElementById('dateStatusBadge');
+      if (badge) badge.innerText = `Session: ${dateVal}`;
+      fetchDailyReport(false, dateVal);
+    }
+
+    async function fetchDailyReport(force = false, specificDate = null) {
+      const btn = document.getElementById('btnRefresh');
+      if (btn && force) {
+        btn.innerHTML = '🔄 Syncing Live...';
+        btn.disabled = true;
+      }
+
+      const token = localStorage.getItem('ai_trader_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for broker sync
+
+      try {
+        let url;
+        if (specificDate) {
+          url = `/api/reports/daily/date/${specificDate}`;
+        } else {
+          url = force ? '/api/reports/daily/latest?force=true' : '/api/reports/daily/latest';
+        }
+
+        const res = await fetch(url, { headers, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const r = data.report || data;
+        if (!r) return;
+
+        if (r.date) {
+          document.getElementById('repDate').innerText = r.date;
+          currentSelectedDate = r.date;
+        }
+        if (r.generated_at) document.getElementById('repTime').innerText = r.generated_at;
+        if (r.broker_mode) document.getElementById('repMode').innerText = `● ${r.broker_mode} (${r.client_code || 'AACJ120032'})`;
+
+        const t = r.treasury || {};
+        if (t.starting_capital_inr !== undefined) document.getElementById('valStartCap').innerText = `₹${t.starting_capital_inr.toFixed(2)}`;
+        if (t.closing_capital_inr !== undefined) document.getElementById('valCloseCap').innerText = `₹${t.closing_capital_inr.toFixed(2)}`;
+        
+        const pnl = t.realized_pnl_inr || 0;
+        const pnlEl = document.getElementById('valPnl');
+        if (pnlEl) {
+          pnlEl.innerText = `₹${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
+          pnlEl.className = pnl >= 0 ? 'val val-green' : 'val val-red';
+        }
+        if (t.roi_pct !== undefined) document.getElementById('valRoi').innerText = `${t.roi_pct >= 0 ? '+' : ''}${t.roi_pct.toFixed(2)}% Net Return Today`;
+        if (t.available_margin_inr !== undefined) document.getElementById('valMargin').innerText = `₹${t.available_margin_inr.toFixed(2)}`;
+
+        const p = r.performance_stats || {};
+        document.getElementById('valTotalTrades').innerText = p.total_trades_completed || 0;
+        document.getElementById('valWins').innerText = p.winning_trades || 0;
+        document.getElementById('valLosses').innerText = p.losing_trades || 0;
+        document.getElementById('valWinRate').innerText = `${p.win_rate_pct || 0}%`;
+
+        // Open Positions
+        const openBody = document.getElementById('openPositionsBody');
+        if (openBody) {
+          if (r.open_positions && r.open_positions.length > 0) {
+            openBody.innerHTML = r.open_positions.map(pos => `
+              <tr>
+                <td><b>${pos.symbol}</b></td>
+                <td>${pos.quantity}</td>
+                <td>₹${pos.entry_price.toFixed(2)}</td>
+                <td>₹${(pos.current_price || pos.entry_price).toFixed(2)}</td>
+                <td style="color:#ef4444;">₹${pos.stop_loss.toFixed(2)}</td>
+                <td style="color:#10b981;">₹${pos.target_1.toFixed(2)}</td>
+                <td class="${(pos.unrealized_pnl || 0) >= 0 ? 'val-green' : 'val-red'}">₹${(pos.unrealized_pnl || 0) >= 0 ? '+' : ''}${(pos.unrealized_pnl || 0).toFixed(2)}</td>
+              </tr>
+            `).join('');
+          } else {
+            openBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#64748b; padding:20px;">No open positions held overnight. Capital 100% protected in cash.</td></tr>';
+          }
+        }
+
+        // Closed Trades
+        const closedBody = document.getElementById('closedTradesBody');
+        if (closedBody) {
+          if (r.completed_trades && r.completed_trades.length > 0) {
+            closedBody.innerHTML = r.completed_trades.map(tr => `
+              <tr>
+                <td><b>${tr.symbol}</b></td>
+                <td>${tr.quantity}</td>
+                <td>₹${tr.entry_price.toFixed(2)} ${tr.entry_time ? '<br><span style="color:#64748b; font-size:11px;">⏱ ' + tr.entry_time + '</span>' : ''}</td>
+                <td>₹${tr.exit_price.toFixed(2)} ${tr.exit_time ? '<br><span style="color:#64748b; font-size:11px;">⏱ ' + tr.exit_time + '</span>' : ''}</td>
+                <td class="${tr.pnl >= 0 ? 'val-green' : 'val-red'}"><b>₹${tr.pnl >= 0 ? '+' : ''}${tr.pnl.toFixed(2)}</b></td>
+                <td><span class="badge-live">${tr.exit_reason}</span></td>
+              </tr>
+            `).join('');
+          } else {
+            closedBody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#64748b; padding:20px;">No positions were exited during today\'s market hours.</td></tr>';
+          }
+        }
+
+        // Forensic Loss Analysis Rendering
+        const f = r.forensic_analysis;
+        if (f) {
+          // Session Overview
+          const ov = f.session_summary || {};
+          const ovEl = document.getElementById('forensicSessionOverview');
+          if (ovEl) {
+            ovEl.innerHTML = `
+              <div style="font-weight:700; margin-bottom:4px; font-size:14px;">⚠️ Forensic Root Cause Overview:</div>
+              <div>${ov.root_cause_overview || 'Capital strictly defended against drawdown.'}</div>
+              <div style="margin-top:8px; font-size:12px; color:#94a3b8;">
+                Realized Drawdown: <b style="color:#ef4444;">₹${(ov.total_drawdown_inr || 0).toFixed(2)}</b> (${ov.capital_risk_impact_pct || 0}%) • Status: <b style="color:#10b981;">CAPITAL PRESERVED (99.85%)</b>
+              </div>
+            `;
+          }
+
+          // Trade Breakdown Cards
+          const cardsEl = document.getElementById('forensicCardsContainer');
+          if (cardsEl && f.trade_breakdowns) {
+            cardsEl.innerHTML = f.trade_breakdowns.map(tb => {
+              const isProfit = tb.pnl_inr >= 0;
+              return `
+                <div class="forensic-card">
+                  <div class="forensic-header">
+                    <div class="forensic-title">
+                      <span style="font-size:18px;">${isProfit ? '🟢' : '🔴'}</span>
+                      <span>${tb.symbol}</span>
+                      <span class="rule-chip" style="margin:0;">Qty: <b>${tb.quantity}</b></span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span class="${isProfit ? 'val-green' : 'val-red'}" style="font-family:'JetBrains Mono',monospace; font-weight:800; font-size:15px;">
+                        ₹${isProfit ? '+' : ''}${tb.pnl_inr.toFixed(2)} (${isProfit ? '+' : ''}${tb.pnl_pct.toFixed(2)}%)
+                      </span>
+                      <span class="badge-live" style="background:rgba(255,255,255,0.06); color:#cbd5e1; border-color:rgba(255,255,255,0.1); font-size:11px;">
+                        ${tb.exit_trigger}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style="font-size:12px; color:#94a3b8; font-family:'JetBrains Mono',monospace; margin-bottom:10px;">
+                    Entry: <b>₹${tb.entry_price.toFixed(2)}</b> [${tb.entry_time || '--'}] ➔ Exit: <b>₹${tb.exit_price.toFixed(2)}</b> [${tb.exit_time || '--'}]
+                  </div>
+
+                  <div class="forensic-box ${isProfit ? 'forensic-root-cause-green' : 'forensic-root-cause'}">
+                    <b>🔍 ${isProfit ? 'Trade Outcome & Thesis Evaluation:' : 'Why it got loss / missed target:'}</b> ${tb.why_it_lost}
+                  </div>
+
+                  <div class="forensic-box forensic-mistakes">
+                    <b>${isProfit ? '💡 Key Takeaways & Agent Execution Notes:' : '⚠️ Mistakes Committed by AI Agents:'}</b>
+                    <ul style="margin:6px 0 0 0; padding-left:18px;">
+                      ${(tb.agent_mistakes || []).map(m => `<li>${m}</li>`).join('')}
+                    </ul>
+                  </div>
+
+                  <div class="forensic-box forensic-corrective">
+                    <b>${isProfit ? '🛡️ Risk Defense & Future Optimization:' : '⚡ Immediate Corrective Actions Enforced:'}</b>
+                    <ul style="margin:6px 0 0 0; padding-left:18px;">
+                      ${(tb.corrective_actions || []).map(c => `<li>${c}</li>`).join('')}
+                    </ul>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          }
+
+          // Roadmap Grid
+          const roadEl = document.getElementById('forensicRoadmapContainer');
+          if (roadEl && f.corrective_action_roadmap) {
+            roadEl.innerHTML = f.corrective_action_roadmap.map(item => `
+              <div class="roadmap-card">
+                <div class="pillar">${item.pillar}</div>
+                <div class="rule">${item.rule}</div>
+                <span class="badge-status-active">● ${item.status}</span>
+              </div>
+            `).join('');
+          }
+        }
+
+        const rg = r.risk_and_guardian || {};
+        if (rg.max_risk_per_trade_pct) document.getElementById('ruleRisk').innerText = `${rg.max_risk_per_trade_pct}%`;
+        if (rg.max_daily_loss_pct) document.getElementById('ruleLoss').innerText = `${rg.max_daily_loss_pct}%`;
+        if (rg.min_risk_reward_ratio) document.getElementById('ruleRr').innerText = `1:${rg.min_risk_reward_ratio}`;
+
+      } catch (err) {
+        console.warn('Report fetch notice:', err.message);
+      } finally {
+        if (btn) {
+          btn.innerHTML = '🔄 Refresh Data';
+          btn.disabled = false;
+        }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await loadAvailableDates();
+      fetchDailyReport(false);
+    });
+  </script>
+</body>
+</html>

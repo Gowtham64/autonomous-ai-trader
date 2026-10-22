@@ -1,0 +1,15 @@
+[
+  {
+    "id": "REFL-20260930-202556",
+    "timestamp": "2026-09-30T20:25:56.017321+00:00",
+    "symbol": "TCS.NS",
+    "raw_return": "-1.20%",
+    "alpha_vs_benchmark": "-1.40%",
+    "benchmark": "NIFTY50",
+    "holding_hours": 3.5,
+    "exit_reason": "STOP_LOSS",
+    "thesis_assessment": "Thesis invalidated by adverse volatility or premature entry.",
+    "concrete_lesson": "Realized -1.2% loss. Stop-loss prevented catastrophic drawdown. Rule: Always require multi-timeframe confirmation (15m + 1h) before opening position.",
+    "summary": "[TCS.NS] Return: -1.2% (Alpha -1.4% vs NIFTY50) after 3.5h. Lesson: Realized -1.2% loss. Stop-loss prevented catastrophic drawdown. Rule: Always require multi-timeframe confirmation (15m + 1h) before opening position."
+  }
+]
