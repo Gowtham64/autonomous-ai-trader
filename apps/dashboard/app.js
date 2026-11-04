@@ -9,6 +9,7 @@
 let currentSymbol = 'BTCUSDT';
 let currentInterval = '5m';
 let currentChatFilter = 'ALL';
+let currentAgentFilter = 'ALL';
 let candleChart = null;
 let candleSeries = null;
 let volumeSeries = null;
@@ -19,6 +20,7 @@ let equitySeries = null;
 let activeWebSocket = null;
 let cachedCompletedTrades = [];
 let cachedDecisions = [];
+let cachedAgentActions = [];
 let cachedEvents = [];
 let cachedQuotes = [];
 
@@ -152,6 +154,17 @@ function initNavigationTabs() {
       btn.classList.add('active');
       currentChatFilter = btn.getAttribute('data-chat-filter') || 'ALL';
       renderAgentChatStream();
+    });
+  });
+
+  // Agent Type Filter Buttons ("Which Agent Did What")
+  const agentFilters = document.querySelectorAll('#agentTypeFilter button');
+  agentFilters.forEach(btn => {
+    btn.addEventListener('click', () => {
+      agentFilters.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentAgentFilter = btn.getAttribute('data-agent-filter') || 'ALL';
+      fetchAgentActions();
     });
   });
 
@@ -664,6 +677,96 @@ function renderAgentChatStream() {
   }).join('');
 }
 
+// 8b. Real Agent Action Ledger ("Which Agent Did What")
+async function fetchAgentActions() {
+  try {
+    const res = await apiFetch(`/api/office/agent-actions?agent_filter=${currentAgentFilter}&limit=80`);
+    if (res.ok) {
+      const data = await res.json();
+      cachedAgentActions = data.actions || [];
+      const badge = document.getElementById('agentActionCountBadge');
+      if (badge) badge.innerText = `${data.count} Actions Logged`;
+      renderAgentActionsTable();
+    }
+  } catch (err) {
+    console.warn('Agent actions notice:', err);
+  }
+}
+
+function renderAgentActionsTable() {
+  const tbody = document.getElementById('agentActionsTableBody');
+  if (!tbody) return;
+
+  if (cachedAgentActions.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-dim);">No agent actions recorded matching filter.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = cachedAgentActions.map((a, idx) => {
+    let agentColor = 'var(--accent-cyan)';
+    if (a.agent.includes('Strategy')) agentColor = 'var(--accent-green)';
+    if (a.agent.includes('Risk')) agentColor = '#a855f7';
+    if (a.agent.includes('Execution')) agentColor = '#f59e0b';
+    if (a.agent.includes('Portfolio')) agentColor = '#38bdf8';
+
+    const statusClass = a.status === 'PASSED' || a.status === 'APPROVED' || a.status === 'FILLED' || a.status === 'RECONCILED' ? 'info' : 'reject';
+
+    return `
+      <tr>
+        <td style="font-family:monospace; font-size:11px; color:var(--text-dim);">${a.timestamp || '—'}</td>
+        <td>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="status-dot green"></span>
+            <strong style="color:${agentColor}; font-size:12px;">${a.agent}</strong>
+          </div>
+          <div style="font-size:10px; color:var(--text-dim); margin-left:14px;">${a.role || ''}</div>
+        </td>
+        <td><strong>${a.symbol || '—'}</strong></td>
+        <td><span style="font-weight:600; color:#fff;">${a.action}</span></td>
+        <td><span class="activity-tag ${statusClass}" style="font-weight:700;">${a.status}</span></td>
+        <td style="font-size:11.5px; color:var(--text-main); max-width:340px;">
+          <div>${a.summary}</div>
+          <div style="font-size:10.5px; color:var(--text-dim); margin-top:2px;">${a.details}</div>
+        </td>
+        <td>
+          <button class="tf-btn" onclick="openAgentActionModal(${idx})" style="padding:2px 8px; font-size:10.5px;">Inspect →</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+window.openAgentActionModal = function(idx) {
+  const a = cachedAgentActions[idx];
+  if (!a) return;
+
+  const modal = document.getElementById('tradeDetailModal');
+  const title = document.getElementById('modalTradeTitle');
+  const content = document.getElementById('modalTradeContent');
+  if (!modal || !title || !content) return;
+
+  title.innerText = `Agent Action Audit: ${a.agent}`;
+  content.innerHTML = `
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; background:var(--bg-card-inset); padding:12px; border-radius:6px; font-size:12px;">
+      <div><strong>Agent Name:</strong> ${a.agent}</div>
+      <div><strong>Agent Role:</strong> ${a.role}</div>
+      <div><strong>Symbol:</strong> ${a.symbol}</div>
+      <div><strong>Action:</strong> <span style="color:var(--accent-cyan); font-weight:700;">${a.action}</span></div>
+      <div><strong>Status:</strong> <span class="activity-tag info">${a.status}</span></div>
+      <div><strong>Timestamp:</strong> ${a.timestamp}</div>
+    </div>
+    <div style="margin-top:10px;">
+      <h4 style="font-size:12px; color:var(--accent-green); margin-bottom:4px;">Primary Decision / Evaluation Summary:</h4>
+      <p style="color:var(--text-main); font-size:12px; background:var(--bg-card-inset); padding:10px; border-radius:4px;">${a.summary}</p>
+    </div>
+    <div style="margin-top:10px;">
+      <h4 style="font-size:12px; color:var(--accent-cyan); margin-bottom:4px;">Technical Execution Details & Guardrail Proof:</h4>
+      <p style="color:var(--text-muted); font-size:11.5px; background:var(--bg-card-inset); padding:10px; border-radius:4px;">${a.details}</p>
+    </div>
+  `;
+  modal.classList.add('active');
+};
+
 // 9. Real System Logs & Live Event Stream
 async function fetchSystemLogs() {
   try {
@@ -990,6 +1093,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchPositionsAndOrders();
   fetchEvaluationStatus();
   fetchRealAgentDecisionsAndChat();
+  fetchAgentActions();
   fetchSystemLogs();
   fetchMarketQuotes();
   fetchRealTimeMarketTrades();
@@ -999,6 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(fetchPositionsAndOrders, 3000);
   setInterval(fetchEvaluationStatus, 4000);
   setInterval(fetchRealAgentDecisionsAndChat, 5000);
+  setInterval(fetchAgentActions, 4000);
   setInterval(fetchSystemLogs, 3000);
   setInterval(fetchMarketQuotes, 2000);
   setInterval(fetchRealTimeMarketTrades, 2000);

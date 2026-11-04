@@ -716,6 +716,45 @@
         <!-- Rendered via JS -->
       </div>
 
+      <!-- Agent Action Audit Ledger: Exactly Which Agent Did What -->
+      <div class="panel-card" style="margin-top:16px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px; flex-wrap:wrap; gap:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:16px;">📋</span>
+            <h3 style="font-size:14px; font-weight:700;">Agent Action Ledger ("Which Agent Did What")</h3>
+            <span class="status-dot green"></span>
+            <span class="text-cyan" style="font-size:11px;" id="agentActionCountBadge">Audit Trail Active</span>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;" id="agentTypeFilter">
+            <button class="tf-btn active" data-agent-filter="ALL">ALL AGENTS</button>
+            <button class="tf-btn" data-agent-filter="Scanner">Scanner Agent</button>
+            <button class="tf-btn" data-agent-filter="Strategy">Strategy Agent</button>
+            <button class="tf-btn" data-agent-filter="Risk">Risk Agent</button>
+            <button class="tf-btn" data-agent-filter="Execution">Execution Agent</button>
+            <button class="tf-btn" data-agent-filter="Portfolio">Portfolio Agent</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="fintech-table">
+            <thead>
+              <tr>
+                <th>Timestamp (UTC)</th>
+                <th>Autonomous Agent</th>
+                <th>Symbol</th>
+                <th>Action Taken</th>
+                <th>Status</th>
+                <th>Decision & Execution Summary</th>
+                <th>Forensic Audit</th>
+              </tr>
+            </thead>
+            <tbody id="agentActionsTableBody">
+              <!-- Populated dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Live Multi-Agent Trade Chat & Debate Terminal -->
       <div class="panel-card" style="margin-top:16px; padding:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">

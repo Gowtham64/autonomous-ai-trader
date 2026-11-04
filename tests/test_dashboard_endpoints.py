@@ -80,7 +80,15 @@ async def test_dashboard_static_and_evaluation():
         assert "trades" in tdata
         print(f"Market trades tape verified: count={len(tdata['trades'])}")
 
-        # 10. Test Health
+        # 10. Test Agent Actions Ledger ("Which Agent Did What")
+        actions_resp = await client.get("/api/office/agent-actions")
+        assert actions_resp.status_code == 200
+        adata = actions_resp.json()
+        assert "actions" in adata
+        assert len(adata["actions"]) > 0
+        print(f"Agent actions ledger verified: count={len(adata['actions'])}, sample={adata['actions'][0]['agent']} -> {adata['actions'][0]['action']}")
+
+        # 11. Test Health
         health_resp = await client.get("/health")
         assert health_resp.status_code == 200
         hdata = health_resp.json()
