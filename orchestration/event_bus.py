@@ -15,10 +15,13 @@ class SystemEventType(str, Enum):
     NEWS_EVENT = "NEWS_EVENT"
     EARNINGS_EVENT = "EARNINGS_EVENT"
     RISK_LIMIT_REACHED = "RISK_LIMIT_REACHED"
+    RISK_ALERT = "RISK_ALERT"
+    ORDER_SUBMITTED = "ORDER_SUBMITTED"
     ORDER_FILLED = "ORDER_FILLED"
     ORDER_REJECTED = "ORDER_REJECTED"
     POSITION_CHANGED = "POSITION_CHANGED"
     MARKET_REGIME_CHANGED = "MARKET_REGIME_CHANGED"
+    MARKET_TICK = "MARKET_TICK"
     STRATEGY_FAILURE = "STRATEGY_FAILURE"
     AGENT_FAILURE = "AGENT_FAILURE"
     NEW_AGENT_CREATED = "NEW_AGENT_CREATED"
@@ -80,6 +83,37 @@ class RealtimeEventBus:
                 logger.error(f"[Event Bus] Handler error on {event_type}: {e}")
 
         return event
+
+    def publish(
+        self,
+        event_type: Any = SystemEventType.PRICE_MOVEMENT,
+        source: str = "SYSTEM",
+        payload: dict[str, Any] | None = None,
+        symbol: str | None = None,
+        component: str | None = None,
+        message: str | None = None,
+        severity: str = "INFO",
+    ) -> SystemEvent:
+        """Flexible compatibility wrapper supporting keyword arguments."""
+        if isinstance(event_type, str):
+            try:
+                event_type = SystemEventType(event_type)
+            except Exception:
+                event_type = SystemEventType.PRICE_MOVEMENT
+
+        actual_source = component or source or "SYSTEM"
+        actual_payload = dict(payload or {})
+        if message and "message" not in actual_payload:
+            actual_payload["message"] = message
+        if severity and "severity" not in actual_payload:
+            actual_payload["severity"] = severity
+
+        return self.publish_event(
+            event_type=event_type,
+            source=actual_source,
+            payload=actual_payload,
+            symbol=symbol,
+        )
 
     def get_recent_events(self, limit: int = 20) -> list[dict]:
         return [e.model_dump() for e in self.event_log[-limit:]]
