@@ -20,14 +20,11 @@ WORKDIR /app
 # Install lightweight CPU-only PyTorch first to avoid multi-GB GPU bloat
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Copy dependency definition
-COPY pyproject.toml .
+# Copy source code and definitions (including README.md required by hatchling)
+COPY . .
 
 # Install project dependencies
 RUN pip install --no-cache-dir -e .
-
-# Copy source tree
-COPY . .
 
 # Ensure data directory exists
 RUN mkdir -p /app/data
