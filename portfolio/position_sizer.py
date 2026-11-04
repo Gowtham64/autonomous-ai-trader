@@ -62,7 +62,7 @@ def get_delta_contract_multiplier(symbol: str) -> float | None:
     Returns None if the asset specification cannot be verified from the exchange.
     """
     sym_raw = symbol.upper().strip()
-    sym_clean = sym_raw.replace("USD", "").replace(".NS", "").replace(".BO", "")
+    sym_clean = sym_raw.replace("USDT", "").replace("USD", "").replace(".NS", "").replace(".BO", "")
     if sym_raw in _DYNAMIC_DELTA_MULTIPLIERS:
         return float(_DYNAMIC_DELTA_MULTIPLIERS[sym_raw])
     if sym_clean in _DYNAMIC_DELTA_MULTIPLIERS:

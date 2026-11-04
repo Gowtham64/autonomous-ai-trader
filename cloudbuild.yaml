@@ -1,0 +1,14 @@
+steps:
+  # 1. Build trading container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/trading-ai:latest', '.']
+
+  # 2. Push image to Container / Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/trading-ai:latest']
+
+images:
+  - 'gcr.io/$PROJECT_ID/trading-ai:latest'
+
+timeout: '1200s'
+

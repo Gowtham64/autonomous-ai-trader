@@ -31,6 +31,7 @@ from guardian.models import GuardianAction, PositionGuardianState
 from guardian.position_guardian import PositionGuardianWorker
 from guardian.post_trade_analytics import PostTradeAnalyticsEngine
 from guardian.trade_guardian import MasterTradeGuardian
+from market.calendar import IST_TIMEZONE, IndianMarketCalendar
 from portfolio.position_sizer import PositionSizer, get_delta_contract_multiplier
 from risk.engine import DeterministicRiskEngine
 
@@ -221,8 +222,37 @@ def test_regression_bug_03_slippage_dynamic_reanchoring():
         is_active=True,
     )
     worker = PositionGuardianWorker(pos=pos)
-    action, reason = asyncio.run(worker.evaluate_tick(current_ltp=actual_fill))
-    assert action == GuardianAction.HOLD, f"Position should HOLD on initial tick, got {action}"
+    # Mock IndianMarketCalendar.now_ist() to regular trading hours (10:30 IST) to isolate from EOD square-off
+    with patch.object(IndianMarketCalendar, "now_ist", return_value=datetime(2026, 10, 23, 10, 30, tzinfo=IST_TIMEZONE)):
+        action, reason = asyncio.run(worker.evaluate_tick(current_ltp=actual_fill))
+        assert action == GuardianAction.HOLD, f"Position should HOLD on initial tick, got {action}"
+
+
+def test_regression_bug_03_eod_squareoff_after_cutoff():
+    """Verify that PositionGuardian triggers EOD_SQUAREOFF for Indian equities after 14:43 IST cutoff."""
+    actual_fill = 0.3699
+    adj_sl = 0.3683
+    pos = PositionSnapshot(
+        position_id="POS-TEST-EOD",
+        symbol="STXUSD",
+        exchange="NSE",
+        quantity=19,
+        entry_price=actual_fill,
+        current_price=actual_fill,
+        stop_loss=adj_sl,
+        target_1=0.3800,
+        highest_price_seen=actual_fill,
+        lowest_price_seen=actual_fill,
+        unrealized_pnl=0.0,
+        opened_at=datetime.now(UTC),
+        is_active=True,
+    )
+    worker = PositionGuardianWorker(pos=pos)
+    # Mock time to 14:50 IST (after 14:43 IST Terminal Broker RMS cutoff)
+    with patch.object(IndianMarketCalendar, "now_ist", return_value=datetime(2026, 10, 23, 14, 50, tzinfo=IST_TIMEZONE)):
+        action, reason = asyncio.run(worker.evaluate_tick(current_ltp=actual_fill))
+        assert action == GuardianAction.EOD_SQUAREOFF, f"Expected EOD_SQUAREOFF after cutoff, got {action}"
+        assert "Terminal Broker RMS Penalty Defense" in reason
 
 
 # ==============================================================================

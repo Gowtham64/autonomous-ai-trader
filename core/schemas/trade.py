@@ -128,4 +128,6 @@ class PositionSnapshot(BaseModel):
     opened_at: datetime
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     thesis_invalidation_rules: list[str] = Field(default_factory=list)
+    mark_price: float | None = None
+    valuation_unreliable: bool = False
     is_active: bool = True

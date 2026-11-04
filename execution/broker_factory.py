@@ -12,13 +12,20 @@ _cached_brokers: dict[str, BaseBroker] = {}
 
 def get_active_broker(broker_name: str | None = None) -> BaseBroker:
     """Instantiates or returns the cached singleton production or paper broker adapter."""
-    if settings.TRADING_MODE == TradingMode.PAPER:
-        if "paper" not in _cached_brokers:
-            logger.info(f"[Broker Factory] Using PaperBroker with ₹{settings.INITIAL_CAPITAL:.2f} bootstrap capital.")
-            _cached_brokers["paper"] = PaperBroker(initial_capital=settings.INITIAL_CAPITAL)
-        return _cached_brokers["paper"]
-
     resolved_name = (broker_name or settings.BROKER_NAME or "angelone").lower()
+
+    if not settings.LIVE_TRADING_ENABLED or settings.TRADING_MODE == TradingMode.PAPER:
+        cache_key = f"paper_{resolved_name}"
+        if cache_key not in _cached_brokers:
+            if resolved_name in ["delta", "delta_exchange"]:
+                from execution.paper.delta_paper import DeltaPaperBroker
+                paper_cap = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL < 100.0 else 10.0
+                logger.info(f"[Broker Factory] Using DeltaPaperBroker for isolated crypto paper trading (${paper_cap:.2f} USD).")
+                _cached_brokers[cache_key] = DeltaPaperBroker(initial_capital=paper_cap)
+            else:
+                logger.info(f"[Broker Factory] Using PaperBroker with ₹{settings.INITIAL_CAPITAL:.2f} bootstrap capital.")
+                _cached_brokers[cache_key] = PaperBroker(initial_capital=settings.INITIAL_CAPITAL)
+        return _cached_brokers[cache_key]
     if resolved_name in _cached_brokers:
         return _cached_brokers[resolved_name]
 

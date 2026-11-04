@@ -1,0 +1,15 @@
+{
+  "pid": 36541,
+  "timestamp_utc": "2026-10-24T12:06:08.618431+00:00",
+  "status": "STOPPED",
+  "elapsed_seconds": 142564.62,
+  "completed_hours": 39.6013,
+  "target_duration_hours": 168.0,
+  "current_equity": 9.6726,
+  "cash_balance": 9.6913,
+  "drawdown_pct": 6.64,
+  "total_trades": 2,
+  "active_positions": 0,
+  "trading_mode": "PAPER",
+  "live_enabled": false
+}

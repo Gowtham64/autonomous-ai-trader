@@ -73,6 +73,8 @@ class PositionGuardianState(BaseModel):
     lowest_price_seen: float
     unrealized_pnl: float = 0.0
     unrealized_pnl_pct: float = 0.0
+    mark_price: float | None = None
+    valuation_unreliable: bool = False
     distance_to_stop_pct: float = 0.0
     distance_to_target_pct: float = 0.0
 

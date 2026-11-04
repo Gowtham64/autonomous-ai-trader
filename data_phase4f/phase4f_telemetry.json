@@ -1,0 +1,149 @@
+{
+  "session": "PHASE4F",
+  "start_time_utc": "2026-10-24T12:07:54.054626+00:00",
+  "end_time_utc": "2026-10-25T11:20:57.517324+00:00",
+  "elapsed_wall_clock_seconds": 83583.43,
+  "target_duration_hours": 24.0,
+  "completed_duration_hours": 23.2176,
+  "is_168h_complete": false,
+  "starting_equity": 10.0,
+  "cash_balance": 9.92,
+  "ending_equity": 9.92,
+  "peak_equity": 10.237,
+  "max_drawdown_pct": 3.1,
+  "total_trades": 3,
+  "total_orders": 8,
+  "risk_tests_count": 9,
+  "risk_tests_passed": 9,
+  "is_valuation_reliable": false,
+  "data_quality": [
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T08:39:57.181585+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T08:40:27.213010+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T08:40:57.248267+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T08:41:27.280343+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 519.21,
+      "total_symbols_received": 338,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-25T08:41:57.832604+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T08:42:27.883790+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T08:43:57.678318+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T09:14:58.202082+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T10:16:06.072300+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "OUTAGE",
+      "latency_ms": 0.0,
+      "error": "[Errno 8] nodename nor servname provided, or not known",
+      "timestamp": "2026-10-25T11:20:57.500754+00:00"
+    }
+  ],
+  "risk_test_results": [
+    {
+      "test_name": "TEST-RC-01: Position Sizing Available Margin Gate",
+      "requirement": "Sizer must return 0 quantity if required margin exceeds available margin",
+      "outcome": "PASS",
+      "evidence": "BTCUSD required margin $16.20 on $10 account sized to qty=0"
+    },
+    {
+      "test_name": "TEST-RC-02: Maximum Leverage (5x) and 20% Single-Asset Exposure Cap",
+      "requirement": "Single position margin must not exceed 20% of account capital ($2.00)",
+      "outcome": "PASS",
+      "evidence": "XRPUSDT sized 3 units with $0.80 margin (<= $2.00 cap)"
+    },
+    {
+      "test_name": "TEST-RC-03: Daily Loss Limit Circuit Breaker Activation",
+      "requirement": "Must reject new entries when daily loss reaches or exceeds limit ($1.00)",
+      "outcome": "PASS",
+      "evidence": "Intent rejected with reason: Daily Loss Limit hit: $1.20 >= max allowed $1.00"
+    },
+    {
+      "test_name": "TEST-RC-04: Stop-Loss Direction & Dynamic Re-Anchoring",
+      "requirement": "SL for long must be strictly below fill price; dynamic re-anchor prevents tick-1 exit",
+      "outcome": "PASS",
+      "evidence": "Filled @ $1.3407, Re-anchored SL @ $1.3107 (Direction Valid)"
+    },
+    {
+      "test_name": "TEST-RC-05: Reduce-Only Exit Behavior & Exposure Elimination",
+      "requirement": "Reduce-only order must close/shrink position and never flip exposure",
+      "outcome": "PASS",
+      "evidence": "Executed SELL reduce-only order. Active positions remaining: 0"
+    },
+    {
+      "test_name": "TEST-RC-06: Residual Bracket Order Cleanup upon Reduce-Only Exit",
+      "requirement": "Native bracket orders must be cancelled when position closes",
+      "outcome": "PASS",
+      "evidence": "broker.bracket_orders expunged DOGEUSDT upon market exit fill"
+    },
+    {
+      "test_name": "TEST-RC-07: Duplicate-Order & Anti-Martingale Averaging Prevention",
+      "requirement": "Guardian must disallow averaging down or submitting duplicate orders on active positions",
+      "outcome": "PASS",
+      "evidence": "Guardian rejected duplicate: Duplicate Position Guard: Active position already exists for XRPUSDT."
+    },
+    {
+      "test_name": "TEST-RC-08: Daily Loss State Recovery Across Process Restarts",
+      "requirement": "Restart must restore day-start equity and accumulated loss from persistent storage",
+      "outcome": "PASS",
+      "evidence": "Recovered day_start_equity=$10.00, accumulated_loss=$0.35 from daily_risk_state.json"
+    },
+    {
+      "test_name": "TEST-RC-09: Post-Circuit-Breaker Trade Ingestion Lockout",
+      "requirement": "Zero orders allowed once breaker trips until UTC midnight rollover",
+      "outcome": "PASS",
+      "evidence": "Breaker lockout active. Approved: False"
+    }
+  ]
+}

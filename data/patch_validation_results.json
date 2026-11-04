@@ -1,0 +1,53 @@
+{
+  "xrp_unrealized_pnl": {
+    "pre_patch_ltp": -0.0056,
+    "post_patch_mtm": -0.2742,
+    "discrepancy": -0.2686
+  },
+  "doge_unrealized_pnl": {
+    "pre_patch_ltp": 0.0,
+    "post_patch_mtm": -0.4951,
+    "discrepancy": -0.4951
+  },
+  "portfolio_unrealized_pnl": {
+    "pre_patch_ltp": -0.0056,
+    "post_patch_mtm": -0.7693,
+    "discrepancy": -0.7637
+  },
+  "reported_equity": {
+    "pre_patch_cash": 11.7062,
+    "post_patch_mtm": 10.9369,
+    "discrepancy": -0.7693
+  },
+  "portfolio_drawdown": {
+    "pre_patch_pct": 0.04,
+    "post_patch_pct": 6.61,
+    "true_drawdown_difference_pct": 6.57
+  },
+  "bracket_evaluation": {
+    "xrp_mark_trigger": [
+      true,
+      "STOP_LOSS_HIT",
+      "Stop-loss breached @ 1.3077 via MARK_PRICE (SL: 1.3212)",
+      1.30771927
+    ],
+    "doge_mark_trigger": [
+      true,
+      "STOP_LOSS_HIT",
+      "Stop-loss breached @ 0.0784 via MARK_PRICE (SL: 0.0821)",
+      0.07844058
+    ],
+    "xrp_ltp_trigger": [
+      false,
+      null,
+      "Healthy @ 1.3413 via LTP",
+      1.3413
+    ],
+    "doge_ltp_failsafe_trigger": [
+      true,
+      "STOP_LOSS_HIT",
+      "Stop-loss breached @ 0.0784 via FAILSAFE_MARK_PRICE (SL: 0.0821)",
+      0.07844058
+    ]
+  }
+}

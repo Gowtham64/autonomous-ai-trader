@@ -11,11 +11,11 @@ class DeterministicRiskEngine:
         self,
         total_equity: float = settings.MAX_CAPITAL,
         current_daily_realized_loss: float = 0.0,
-        peak_equity: float = settings.MAX_CAPITAL,
+        peak_equity: float | None = None,
     ):
         self.total_equity = total_equity
         self.daily_realized_loss = current_daily_realized_loss
-        self.peak_equity = peak_equity
+        self.peak_equity = peak_equity if peak_equity is not None else total_equity
 
     def evaluate_trade_intent(
         self,
@@ -58,10 +58,14 @@ class DeterministicRiskEngine:
                 f"Max open positions count reached: {len(active_positions)}/{settings.MAX_OPEN_POSITIONS}"
             )
 
-        # 5. Duplicate Position Prevention
+        # 5. Duplicate Position Prevention & Valuation Integrity
         for pos in active_positions:
             if pos.symbol == decision.symbol:
                 rejection_reasons.append(f"Position already open for symbol {decision.symbol}")
+            if getattr(pos, "valuation_unreliable", False):
+                rejection_reasons.append(
+                    f"Position {pos.symbol} has unreliable/stale valuation. New risk-increasing entries blocked."
+                )
 
         # 6. Stop Loss and Risk-to-Reward Validation
         if decision.entry_price is None or decision.stop_loss is None or decision.target_1 is None:

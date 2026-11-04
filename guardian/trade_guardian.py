@@ -246,9 +246,10 @@ class MasterTradeGuardian:
                         ltp = await provider.get_ltp(symbol)
                     except Exception:
                         ltp = 0.0
+                    mark_px = float(getattr(self, "_latest_broker_marks", {}).get(symbol.strip().upper(), 0.0))
                     if not ltp or ltp <= 0:
                         # Fallback to the broker's mark price so no position is ever left unpriced/unmanaged
-                        ltp = float(getattr(self, "_latest_broker_marks", {}).get(symbol.strip().upper(), 0.0))
+                        ltp = mark_px
                     if not ltp or ltp <= 0:
                         logger.warning(f"[Guardian] No live price available for {symbol} (provider + broker mark both empty). Will retry next cycle.")
                         continue
@@ -268,6 +269,7 @@ class MasterTradeGuardian:
                         market_regime=market_regime,
                         ohlcv_5m=df_5m,
                         provider=provider,
+                        mark_price=mark_px if mark_px > 0 else None,
                     )
 
                     if action in [

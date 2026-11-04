@@ -64,3 +64,5 @@ Thumbs.db
 .ruff_cache/
 .coverage
 htmlcov/
+*.tar.gz
+.worktrees/

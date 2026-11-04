@@ -1,0 +1,167 @@
+{
+  "session": "PHASE4E",
+  "start_time_utc": "2026-10-22T20:30:04.003220+00:00",
+  "end_time_utc": "2026-10-24T12:06:02.306959+00:00",
+  "elapsed_wall_clock_seconds": 142557.81,
+  "target_duration_hours": 168.0,
+  "completed_duration_hours": 39.5994,
+  "is_168h_complete": false,
+  "starting_equity": 10.0,
+  "cash_balance": 9.6913,
+  "ending_equity": 9.6726,
+  "peak_equity": 10.3603,
+  "max_drawdown_pct": 6.64,
+  "total_trades": 2,
+  "total_orders": 6,
+  "risk_tests_count": 9,
+  "risk_tests_passed": 9,
+  "is_valuation_reliable": true,
+  "data_quality": [
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 417.3,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:01:26.584940+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 371.53,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:01:56.985283+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 1178.3,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:02:28.197720+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 994.35,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:02:59.225096+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 613.51,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:03:29.873514+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 410.53,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:04:00.315494+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 353.37,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:04:30.699184+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 325.64,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:05:01.059497+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 691.4,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:05:31.780480+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 466.81,
+      "total_symbols_received": 250,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-24T12:06:02.285476+00:00"
+    }
+  ],
+  "risk_test_results": [
+    {
+      "test_name": "TEST-RC-01: Position Sizing Available Margin Gate",
+      "requirement": "Sizer must return 0 quantity if required margin exceeds available margin",
+      "outcome": "PASS",
+      "evidence": "BTCUSD required margin $16.20 on $10 account sized to qty=0"
+    },
+    {
+      "test_name": "TEST-RC-02: Maximum Leverage (5x) and 20% Single-Asset Exposure Cap",
+      "requirement": "Single position margin must not exceed 20% of account capital ($2.00)",
+      "outcome": "PASS",
+      "evidence": "XRPUSDT sized 3 units with $0.80 margin (<= $2.00 cap)"
+    },
+    {
+      "test_name": "TEST-RC-03: Daily Loss Limit Circuit Breaker Activation",
+      "requirement": "Must reject new entries when daily loss reaches or exceeds limit ($1.00)",
+      "outcome": "PASS",
+      "evidence": "Intent rejected with reason: Daily Loss Limit hit: $1.20 >= max allowed $1.00"
+    },
+    {
+      "test_name": "TEST-RC-04: Stop-Loss Direction & Dynamic Re-Anchoring",
+      "requirement": "SL for long must be strictly below fill price; dynamic re-anchor prevents tick-1 exit",
+      "outcome": "PASS",
+      "evidence": "Filled @ $1.3407, Re-anchored SL @ $1.3107 (Direction Valid)"
+    },
+    {
+      "test_name": "TEST-RC-05: Reduce-Only Exit Behavior & Exposure Elimination",
+      "requirement": "Reduce-only order must close/shrink position and never flip exposure",
+      "outcome": "PASS",
+      "evidence": "Executed SELL reduce-only order. Active positions remaining: 0"
+    },
+    {
+      "test_name": "TEST-RC-06: Residual Bracket Order Cleanup upon Reduce-Only Exit",
+      "requirement": "Native bracket orders must be cancelled when position closes",
+      "outcome": "PASS",
+      "evidence": "broker.bracket_orders expunged DOGEUSDT upon market exit fill"
+    },
+    {
+      "test_name": "TEST-RC-07: Duplicate-Order & Anti-Martingale Averaging Prevention",
+      "requirement": "Guardian must disallow averaging down or submitting duplicate orders on active positions",
+      "outcome": "PASS",
+      "evidence": "Guardian rejected duplicate: Duplicate Position Guard: Active position already exists for XRPUSDT."
+    },
+    {
+      "test_name": "TEST-RC-08: Daily Loss State Recovery Across Process Restarts",
+      "requirement": "Restart must restore day-start equity and accumulated loss from persistent storage",
+      "outcome": "PASS",
+      "evidence": "Recovered day_start_equity=$10.00, accumulated_loss=$0.35 from daily_risk_state.json"
+    },
+    {
+      "test_name": "TEST-RC-09: Post-Circuit-Breaker Trade Ingestion Lockout",
+      "requirement": "Zero orders allowed once breaker trips until UTC midnight rollover",
+      "outcome": "PASS",
+      "evidence": "Breaker lockout active. Approved: False"
+    }
+  ]
+}

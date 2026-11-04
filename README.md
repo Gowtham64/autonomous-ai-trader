@@ -142,4 +142,42 @@ python apps/cli/main.py live --broker angelone --universe nifty50
 - **AI CTO Agent & System Upgrade Engine**: Gated validation pipeline (`PROPOSE` ➔ `SANDBOX` ➔ `UNIT_TEST` ➔ `BACKTEST` ➔ `PAPER_TRADING` ➔ `CANARY` ➔ `DEPLOY`) with automated rollbacks upon performance degradation.
 - **Official AI Organization Balance Sheet**: Real-time balance sheet reporting Capital Structure, Income & Expenses, Profitability, System Health, and Survival Runway.
 
+---
+
+## Production Deployment: Docker, PostgreSQL & GCP
+
+### 1. Local / Server Docker Compose Stack
+Orchestrates PostgreSQL 16, Redis 7, FastAPI/Dashboard, and the Autonomous Trading Daemon:
+```bash
+# Build and launch stack
+docker compose up -d --build
+
+# View logs
+docker compose logs -f daemon
+docker compose logs -f api
+
+# Shutdown stack
+docker compose down
+```
+
+### 2. PostgreSQL Configuration
+The database uses `asyncpg` for high-throughput asynchronous execution:
+- Connection URL in `.env`:
+  ```bash
+  DATABASE_URL=postgresql+asyncpg://trader:traderpassword@postgres:5432/trading_db
+  ```
+- Tables are automatically synchronized on startup via `await init_db()`.
+
+### 3. Deploying to Google Cloud Platform (GCP)
+Deploy to a dedicated GCP Compute Engine instance (recommended for persistent WebSockets and daemons):
+```bash
+# Configure gcloud
+gcloud auth login
+gcloud config set project <YOUR_GCP_PROJECT_ID>
+
+# Run deployment script (creates VM, installs Docker, syncs code, launches stack)
+./scripts/deploy_gcp.sh
+```
+The Trading Dashboard will be accessible at `http://<GCP_EXTERNAL_IP>:8000`.
+
 

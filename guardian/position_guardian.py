@@ -79,6 +79,7 @@ class PositionGuardianWorker:
         market_regime: str = "Trending",
         ohlcv_5m: object = None,
         provider: object = None,
+        mark_price: float | None = None,
     ) -> tuple[GuardianAction, str]:
         """Evaluates live market tick and chart structure to calculate risk, trailing stops, and profit-taking exits."""
         if not self.state.is_active:
@@ -86,6 +87,8 @@ class PositionGuardianWorker:
 
         atr = current_atr or self.state.atr_14 or (current_ltp * 0.015)
         self.state.current_price = current_ltp
+        if mark_price and mark_price > 0:
+            self.state.mark_price = mark_price
         self.state.atr_14 = round(atr, 2)
         self.state.relative_volume = round(relative_volume, 2)
         self.state.last_evaluation_time = datetime.now(UTC)
@@ -105,16 +108,18 @@ class PositionGuardianWorker:
         else:
             mult = 1.0
 
+        val_px = mark_price if (mark_price is not None and mark_price > 0) else current_ltp
+
         if is_short:
-            pnl = (self.state.entry_price - current_ltp) * self.state.quantity * mult
-            pnl_pct = ((self.state.entry_price - current_ltp) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
+            pnl = (self.state.entry_price - val_px) * self.state.quantity * mult
+            pnl_pct = ((self.state.entry_price - val_px) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             peak_gain_pct = ((self.state.entry_price - self.state.lowest_price_seen) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             pullback_from_peak_pct = ((current_ltp - self.state.lowest_price_seen) / self.state.lowest_price_seen) * 100.0 if self.state.lowest_price_seen > 0 else 0.0
             distance_to_sl = self.state.stop_loss - current_ltp
             distance_to_tgt = current_ltp - self.state.target_1
         else:
-            pnl = (current_ltp - self.state.entry_price) * self.state.quantity * mult
-            pnl_pct = ((current_ltp - self.state.entry_price) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
+            pnl = (val_px - self.state.entry_price) * self.state.quantity * mult
+            pnl_pct = ((val_px - self.state.entry_price) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             peak_gain_pct = ((self.state.highest_price_seen - self.state.entry_price) / self.state.entry_price) * 100.0 if self.state.entry_price > 0 else 0.0
             pullback_from_peak_pct = ((self.state.highest_price_seen - current_ltp) / self.state.highest_price_seen) * 100.0 if self.state.highest_price_seen > 0 else 0.0
             distance_to_sl = current_ltp - self.state.stop_loss

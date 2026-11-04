@@ -20,6 +20,7 @@ class PositionMonitor:
         current_ltp: float,
         current_atr: float = 20.0,
         check_eod: bool = True,
+        mark_price: float | None = None,
     ) -> tuple[bool, ExitReason | None, str]:
         is_crypto = (pos.exchange and pos.exchange.upper() in ["DELTA", "CRYPTO"]) or ("USD" in pos.symbol.upper())
         currency_sym = "$" if is_crypto else "₹"
@@ -28,8 +29,17 @@ class PositionMonitor:
         def _round_p(val: float) -> float:
             return round(val, prec)
 
-        pos.unrealized_pnl = round((current_ltp - pos.entry_price) * pos.quantity, 4 if is_crypto else 2)
-        pnl_pct = ((current_ltp - pos.entry_price) / pos.entry_price) * 100.0 if pos.entry_price > 0 else 0.0
+        if is_crypto:
+            from portfolio.position_sizer import get_delta_contract_multiplier
+            mult = get_delta_contract_multiplier(pos.symbol) or 1.0
+        else:
+            mult = 1.0
+
+        is_short = str(pos.side).upper() in ["SELL", "SHORT"]
+        val_px = mark_price if (mark_price is not None and mark_price > 0) else current_ltp
+        pnl = ((pos.entry_price - val_px) if is_short else (val_px - pos.entry_price)) * pos.quantity * mult
+        pos.unrealized_pnl = round(pnl, 4 if is_crypto else 2)
+        pnl_pct = (((pos.entry_price - val_px) if is_short else (val_px - pos.entry_price)) / pos.entry_price) * 100.0 if pos.entry_price > 0 else 0.0
 
         # Update high-water mark
         if current_ltp > pos.highest_price_seen:

@@ -1,0 +1,4 @@
+trade_id,timestamp,symbol,direction,quantity,contract_multiplier,live_market_price,entry_price,exit_price,exit_reason,gross_pnl,entry_fee,exit_fee,total_commission,net_pnl,cash_capital,portfolio_equity,drawdown,drawdown_pct,status
+1,2026-10-24T14:18:25.627077+00:00,DOGEUSDT,BUY,1,100.0,0.07573329,0.077418,0.075695,STOP_LOSS_HIT,-0.1723,0.0,0.0038,0.0038,-0.1761,9.8155,9.7253,0.3426,3.4,CLOSED
+2,2026-10-24T15:18:10.782386+00:00,XRPUSDT,BUY,7,1.0,1.25915014,1.2794,1.2585,STOP_LOSS_HIT,-0.1463,0.0,0.0044,0.0044,-0.1507,9.661,9.593,0.4749,4.72,CLOSED
+3,2026-10-24T23:33:34.537898+00:00,XRPUSDT,BUY,7,1.0,1.29968596,1.2596,1.299,TARGET_HIT,0.2758,0.0,0.0045,0.0045,0.2713,9.9262,10.1142,0.0,0.0,CLOSED

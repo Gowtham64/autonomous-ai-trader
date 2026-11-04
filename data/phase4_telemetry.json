@@ -1,0 +1,162 @@
+{
+  "start_time_utc": "2026-10-22T18:37:16.957765+00:00",
+  "end_time_utc": "2026-10-22T20:21:15.307431+00:00",
+  "elapsed_wall_clock_seconds": 6237.82,
+  "target_duration_hours": 168.0,
+  "completed_duration_hours": 1.7327,
+  "is_168h_complete": false,
+  "starting_equity": 10.0,
+  "ending_equity": 11.7043,
+  "total_trades": 4,
+  "total_orders": 9,
+  "risk_tests_count": 9,
+  "risk_tests_passed": 9,
+  "data_quality": [
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 364.83,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:16:39.456205+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 420.3,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:17:09.891884+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 462.87,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:17:40.367242+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 574.5,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:18:10.953373+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 429.9,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:18:41.398885+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 380.22,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:19:11.794866+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 1206.02,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:19:43.043247+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 1326.88,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:20:14.388784+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 355.96,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:20:44.760588+00:00"
+    },
+    {
+      "feed_name": "Delta Exchange REST /v2/tickers",
+      "status": "HEALTHY",
+      "latency_ms": 522.93,
+      "total_symbols_received": 325,
+      "stale_symbols_detected": 0,
+      "outages_detected": 0,
+      "timestamp": "2026-10-22T20:21:15.304932+00:00"
+    }
+  ],
+  "risk_test_results": [
+    {
+      "test_name": "TEST-RC-01: Position Sizing Available Margin Gate",
+      "requirement": "Sizer must return 0 quantity if required margin exceeds available margin",
+      "outcome": "PASS",
+      "evidence": "BTCUSD required margin $16.20 on $10 account sized to qty=0"
+    },
+    {
+      "test_name": "TEST-RC-02: Maximum Leverage (5x) and 20% Single-Asset Exposure Cap",
+      "requirement": "Single position margin must not exceed 20% of account capital ($2.00)",
+      "outcome": "PASS",
+      "evidence": "XRPUSDT sized 3 units with $0.80 margin (<= $2.00 cap)"
+    },
+    {
+      "test_name": "TEST-RC-03: Daily Loss Limit Circuit Breaker Activation",
+      "requirement": "Must reject new entries when daily loss reaches or exceeds limit ($1.00)",
+      "outcome": "PASS",
+      "evidence": "Intent rejected with reason: Daily Loss Limit hit: $1.20 >= max allowed $1.00"
+    },
+    {
+      "test_name": "TEST-RC-04: Stop-Loss Direction & Dynamic Re-Anchoring",
+      "requirement": "SL for long must be strictly below fill price; dynamic re-anchor prevents tick-1 exit",
+      "outcome": "PASS",
+      "evidence": "Filled @ $1.3407, Re-anchored SL @ $1.3107 (Direction Valid)"
+    },
+    {
+      "test_name": "TEST-RC-05: Reduce-Only Exit Behavior & Exposure Elimination",
+      "requirement": "Reduce-only order must close/shrink position and never flip exposure",
+      "outcome": "PASS",
+      "evidence": "Executed SELL reduce-only order. Active positions remaining: 0"
+    },
+    {
+      "test_name": "TEST-RC-06: Residual Bracket Order Cleanup upon Reduce-Only Exit",
+      "requirement": "Native bracket orders must be cancelled when position closes",
+      "outcome": "PASS",
+      "evidence": "broker.bracket_orders expunged DOGEUSDT upon market exit fill"
+    },
+    {
+      "test_name": "TEST-RC-07: Duplicate-Order & Anti-Martingale Averaging Prevention",
+      "requirement": "Guardian must disallow averaging down or submitting duplicate orders on active positions",
+      "outcome": "PASS",
+      "evidence": "Guardian rejected duplicate: Duplicate Position Guard: Active position already exists for XRPUSDT."
+    },
+    {
+      "test_name": "TEST-RC-08: Daily Loss State Recovery Across Process Restarts",
+      "requirement": "Restart must restore day-start equity and accumulated loss from persistent storage",
+      "outcome": "PASS",
+      "evidence": "Recovered day_start_equity=$10.00, accumulated_loss=$0.35 from daily_risk_state.json"
+    },
+    {
+      "test_name": "TEST-RC-09: Post-Circuit-Breaker Trade Ingestion Lockout",
+      "requirement": "Zero orders allowed once breaker trips until UTC midnight rollover",
+      "outcome": "PASS",
+      "evidence": "Breaker lockout active. Approved: False"
+    }
+  ]
+}

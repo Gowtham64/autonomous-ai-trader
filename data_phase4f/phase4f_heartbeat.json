@@ -1,0 +1,15 @@
+{
+  "pid": 52005,
+  "timestamp_utc": "2026-10-25T12:32:35.072611+00:00",
+  "status": "STOPPED",
+  "elapsed_seconds": 87881.02,
+  "completed_hours": 24.4114,
+  "target_duration_hours": 24.0,
+  "current_equity": 9.92,
+  "cash_balance": 9.92,
+  "drawdown_pct": 3.1,
+  "total_trades": 3,
+  "active_positions": 0,
+  "trading_mode": "PAPER",
+  "live_enabled": false
+}

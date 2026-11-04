@@ -1,0 +1,13 @@
+{
+  "pid": 17998,
+  "timestamp_utc": "2026-10-22T20:21:26.336011+00:00",
+  "status": "STOPPED",
+  "elapsed_seconds": 6249.38,
+  "completed_hours": 1.7359,
+  "target_duration_hours": 168.0,
+  "current_equity": 11.7043,
+  "total_trades": 4,
+  "active_positions": 0,
+  "trading_mode": "PAPER",
+  "live_enabled": false
+}

@@ -67,9 +67,9 @@ class AutonomousTradingDaemon:
         logger.info(f"=== STARTING MULTI-STOCK TRADING CYCLE | PHASE: {phase} ({countdown_str}) ===")
 
 
-        # 0. Live Broker Funds & Margin Verification (Pre-Market / Active Hours)
+        # 0. Live/Paper Broker Funds & Margin Verification (Pre-Market / Active Hours)
         available_margin = self.total_capital
-        if settings.TRADING_MODE == TradingMode.LIVE:
+        if settings.TRADING_MODE in [TradingMode.LIVE, TradingMode.PAPER]:
             try:
                 funds = await self.broker.get_funds()
                 real_cap = float(funds.get("total_capital", 0.0))
