@@ -689,9 +689,33 @@
     <div id="tab-agents" class="module-screen">
       <div class="module-header">
         <h2>AI Agent Command Center & Inter-Agent Hub</h2>
+        <span class="text-cyan" style="font-size:12px;">9 Specialized Autonomous Agents Online</span>
       </div>
       <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:14px;" id="agentsDetailedGrid">
         <!-- Rendered via JS -->
+      </div>
+
+      <!-- Live Multi-Agent Trade Chat & Debate Terminal -->
+      <div class="panel-card" style="margin-top:16px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:8px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:16px;">💬</span>
+            <h3 style="font-size:14px; font-weight:700;">Live Multi-Agent Trade Chat & Strategy Debates</h3>
+            <span class="status-dot green"></span>
+            <span class="text-green" style="font-size:11px;">Real-Time AI Office Bus</span>
+          </div>
+          <div style="display:flex; gap:6px;" id="chatSymbolFilter">
+            <button class="tf-btn active" data-chat-filter="ALL">ALL</button>
+            <button class="tf-btn" data-chat-filter="BTC">BTC</button>
+            <button class="tf-btn" data-chat-filter="ETH">ETH</button>
+            <button class="tf-btn" data-chat-filter="SOL">SOL</button>
+            <button class="tf-btn" data-chat-filter="XRP">XRP</button>
+            <button class="tf-btn" data-chat-filter="DOGE">DOGE</button>
+          </div>
+        </div>
+        <div class="activity-stream" id="agentChatStream" style="max-height: 520px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;">
+          <!-- Populated dynamically via JS with real agent decisions -->
+        </div>
       </div>
     </div>
 

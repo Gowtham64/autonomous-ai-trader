@@ -36,7 +36,44 @@ async def test_dashboard_static_and_evaluation():
         assert "candles" in cdata
         print(f"Candles endpoint verified: {cdata['symbol']}, count={cdata['count']}")
 
-        # 4. Test Health
+        # 4. Test Performance Endpoint
+        perf_resp = await client.get("/api/performance")
+        assert perf_resp.status_code == 200
+        pdata = perf_resp.json()
+        assert "metrics" in pdata
+        assert "live_funds" in pdata
+        print(f"Performance verified: total_trades={pdata['metrics'].get('total_trades')}, realized_pnl={pdata['metrics'].get('realized_pnl')}")
+
+        # 5. Test Orders Endpoint (Completed trades & db orders)
+        ord_resp = await client.get("/api/orders")
+        assert ord_resp.status_code == 200
+        odata = ord_resp.json()
+        assert "completed_trades" in odata
+        assert "db_orders" in odata
+        print(f"Orders verified: completed_trades={len(odata['completed_trades'])}, db_orders={len(odata['db_orders'])}")
+
+        # 6. Test Decisions Endpoint (Multi-agent debate records)
+        dec_resp = await client.get("/api/office/decisions")
+        assert dec_resp.status_code == 200
+        ddata = dec_resp.json()
+        assert "decisions" in ddata
+        print(f"Decisions verified: count={len(ddata['decisions'])}")
+
+        # 7. Test Events Endpoint (Live logs)
+        ev_resp = await client.get("/api/events")
+        assert ev_resp.status_code == 200
+        edata = ev_resp.json()
+        assert "events" in edata
+        print(f"Events verified: count={len(edata['events'])}")
+
+        # 8. Test Market Quotes Endpoint
+        quotes_resp = await client.get("/api/market/quotes")
+        assert quotes_resp.status_code == 200
+        qdata = quotes_resp.json()
+        assert "quotes" in qdata
+        print(f"Quotes verified: count={len(qdata['quotes'])}")
+
+        # 9. Test Health
         health_resp = await client.get("/health")
         assert health_resp.status_code == 200
         hdata = health_resp.json()
