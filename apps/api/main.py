@@ -69,34 +69,61 @@ async def get_active_broker():
     return broker
 
 async def update_real_quotes_task():
-    crypto_symbols = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"]
-    equity_symbols = ["NIFTY 50", "BANKNIFTY", "RELIANCE", "SBIN", "TCS"]
-    symbols_to_poll = crypto_symbols + equity_symbols
+    """Polls real-time live market quotes from Delta Exchange API every 2 seconds."""
+    import httpx
+    crypto_targets = [
+        ("BTCUSD", "BTCUSDT"),
+        ("ETHUSD", "ETHUSDT"),
+        ("SOLUSD", "SOLUSDT"),
+        ("XRPUSD", "XRPUSDT"),
+        ("DOGEUSD", "DOGEUSDT"),
+    ]
     while True:
         try:
-            async def _safe_fetch(s):
-                try:
-                    return await asyncio.wait_for(market_provider.get_quote(s), timeout=4.0)
-                except Exception:
-                    return None
+            async with httpx.AsyncClient(timeout=3.5) as client:
+                res = await client.get("https://api.india.delta.exchange/v2/tickers")
+                if res.status_code == 200:
+                    delta_tickers = res.json().get("result", [])
+                    ticker_map = {t.get("symbol"): t for t in delta_tickers}
 
-            results = await asyncio.gather(*[_safe_fetch(s) for s in symbols_to_poll], return_exceptions=True)
-            for res in results:
-                if isinstance(res, dict) and res.get("ltp", 0.0) > 0:
-                    s = res["symbol"]
-                    found = False
-                    for item in _live_quotes_cache:
-                        if item["symbol"] == s:
-                            item["ltp"] = res["ltp"]
-                            item["change"] = res.get("change", 0.0)
-                            item["volume"] = res.get("volume", 0.0)
-                            found = True
-                            break
-                    if not found:
-                        _live_quotes_cache.append(res)
+                    for d_sym, disp_sym in crypto_targets:
+                        t = ticker_map.get(d_sym)
+                        if t:
+                            mark = float(t.get("mark_price") or t.get("close") or 0.0)
+                            close_p = float(t.get("close") or mark)
+                            open_p = float(t.get("open") or close_p)
+                            chg = round(((close_p - open_p) / open_p) * 100, 2) if open_p > 0 else 0.0
+                            vol = float(t.get("volume") or 0.0)
+                            quotes = t.get("quotes") or {}
+                            best_bid = float(quotes.get("best_bid") or mark)
+                            best_ask = float(quotes.get("best_ask") or mark)
+                            spread = round(((best_ask - best_bid) / mark) * 100, 4) if mark > 0 else 0.015
+
+                            for sym in (disp_sym, d_sym):
+                                found = False
+                                for item in _live_quotes_cache:
+                                    if item["symbol"] == sym:
+                                        item["ltp"] = mark
+                                        item["change"] = chg
+                                        item["volume"] = vol
+                                        item["bid"] = best_bid
+                                        item["ask"] = best_ask
+                                        item["spread_pct"] = spread
+                                        found = True
+                                        break
+                                if not found:
+                                    _live_quotes_cache.append({
+                                        "symbol": sym,
+                                        "ltp": mark,
+                                        "change": chg,
+                                        "volume": vol,
+                                        "bid": best_bid,
+                                        "ask": best_ask,
+                                        "spread_pct": spread,
+                                    })
         except Exception as e:
             logger.debug(f"[MarketFeed] Real quote refresh note: {e}")
-        await asyncio.sleep(15.0)
+        await asyncio.sleep(2.0)
 
 
 @asynccontextmanager
@@ -366,12 +393,77 @@ async def get_market_quotes():
     return {"quotes": list(_live_quotes_cache)}
 
 
+@app.get("/api/market/trades")
+async def get_market_trades(symbol: str = "BTCUSDT", limit: int = 30):
+    """Returns real-time live market trade tape for crypto assets."""
+    import httpx
+    try:
+        binance_sym = symbol.replace("-", "").upper()
+        if not binance_sym.endswith("USDT") and not binance_sym.endswith("USD"):
+            binance_sym += "USDT"
+        elif binance_sym.endswith("USD"):
+            binance_sym += "T"
+
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"https://api.binance.com/api/v3/trades?symbol={binance_sym}&limit={limit}")
+            if r.status_code == 200:
+                raw_trades = r.json()
+                trades = [
+                    {
+                        "trade_id": str(tr.get("id")),
+                        "symbol": symbol,
+                        "price": float(tr.get("price", 0.0)),
+                        "quantity": float(tr.get("qty", 0.0)),
+                        "side": "SELL" if tr.get("isBuyerMaker") else "BUY",
+                        "time": datetime.fromtimestamp(tr.get("time", 0) / 1000, tz=UTC).strftime("%H:%M:%S"),
+                        "timestamp_ms": tr.get("time"),
+                    }
+                    for tr in raw_trades
+                ]
+                return {"symbol": symbol, "trades": trades}
+    except Exception as e:
+        logger.debug(f"Public market trades fetch note: {e}")
+    return {"symbol": symbol, "trades": []}
+
+
 @app.get("/api/market/candles")
 async def get_market_candles(symbol: str = "BTCUSDT", interval: str = "5m", period: str = "2d"):
-    """Returns real candlestick OHLCV and technical indicator data for the interactive terminal."""
+    """Returns real-time candlestick OHLCV and technical indicator data from Delta Exchange."""
     try:
         import pandas as pd
-        df = await market_provider.get_historical_ohlcv(symbol, interval=interval, period=period)
+        import httpx
+        import time
+
+        df = None
+        # Try Delta Exchange direct chart history first for crypto
+        delta_symbol = symbol.replace("USDT", "USD").replace("-USD", "USD")
+        res_map = {"1m": "1", "5m": "5", "15m": "15", "1h": "60", "4h": "240", "1d": "D", "1D": "D"}
+        resolution = res_map.get(interval, "5")
+        now_ts = int(time.time())
+        from_ts = now_ts - (86400 * 2)
+
+        try:
+            async with httpx.AsyncClient(timeout=3.5) as client:
+                d_url = f"https://api.india.delta.exchange/v2/chart/history?symbol={delta_symbol}&resolution={resolution}&from={from_ts}&to={now_ts}"
+                d_resp = await client.get(d_url)
+                if d_resp.status_code == 200:
+                    d_data = d_resp.json().get("result", {})
+                    times = d_data.get("t", [])
+                    closes = d_data.get("c", [])
+                    if times and closes:
+                        df = pd.DataFrame({
+                            "open": d_data.get("o", []),
+                            "high": d_data.get("h", []),
+                            "low": d_data.get("l", []),
+                            "close": closes,
+                            "volume": d_data.get("v", []),
+                        }, index=pd.to_datetime(times, unit="s"))
+        except Exception as e:
+            logger.debug(f"Delta direct chart fetch note: {e}")
+
+        # Fallback to market provider if Delta chart was empty or failed
+        if df is None or df.empty:
+            df = await market_provider.get_historical_ohlcv(symbol, interval=interval, period=period)
         if df is None or df.empty:
             df = await market_provider.get_historical_ohlcv(symbol, interval="15m" if interval == "5m" else "1h", period="5d")
         

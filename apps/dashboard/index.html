@@ -295,7 +295,8 @@
               <div class="table-tabs">
                 <button class="tab-btn active" data-subtab="positions">Active Positions (<span id="countActivePos">0</span>)</button>
                 <button class="tab-btn" data-subtab="open-orders">Open Orders (<span id="countOpenOrders">0</span>)</button>
-                <button class="tab-btn" data-subtab="recent-trades">Recent Trades (<span id="countRecentTrades">0</span>)</button>
+                <button class="tab-btn" data-subtab="recent-trades">Recent Agent Trades (<span id="countRecentTrades">0</span>)</button>
+                <button class="tab-btn" data-subtab="market-trades">⚡ Live Market Tape (<span id="countMarketTrades">0</span>)</button>
               </div>
             </div>
 
@@ -374,6 +375,26 @@
                   </thead>
                   <tbody id="recentTradesTableBody">
                     <!-- Populated via JS -->
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 4. Real-Time Market Trades Tape Subtab -->
+              <div id="subtab-market-trades" class="subtab-content" style="display:none;">
+                <table class="fintech-table">
+                  <thead>
+                    <tr>
+                      <th>Time (UTC)</th>
+                      <th>Symbol</th>
+                      <th>Side</th>
+                      <th>Trade Price ($)</th>
+                      <th>Quantity</th>
+                      <th>Trade Value ($)</th>
+                      <th>Exchange ID</th>
+                    </tr>
+                  </thead>
+                  <tbody id="marketTradesTableBody">
+                    <!-- Streamed in real-time -->
                   </tbody>
                 </table>
               </div>

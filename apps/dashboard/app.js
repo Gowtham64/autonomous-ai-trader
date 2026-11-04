@@ -123,6 +123,7 @@ function initNavigationTabs() {
       currentSymbol = pill.getAttribute('data-symbol') || 'BTCUSDT';
       updateChartHeader(currentSymbol);
       loadCandles(currentSymbol, currentInterval);
+      fetchRealTimeMarketTrades();
     });
   });
 
@@ -138,6 +139,7 @@ function initNavigationTabs() {
         });
         updateChartHeader(currentSymbol);
         loadCandles(currentSymbol, currentInterval);
+        fetchRealTimeMarketTrades();
       }
     });
   });
@@ -539,6 +541,43 @@ async function fetchPositionsAndOrders() {
     }
   } catch (err) {
     console.warn('Positions fetch notice:', err);
+  }
+}
+
+// 7b. Real-Time Market Trade Tape Poll
+async function fetchRealTimeMarketTrades() {
+  try {
+    const res = await apiFetch(`/api/market/trades?symbol=${currentSymbol}&limit=35`);
+    if (res.ok) {
+      const data = await res.json();
+      const trades = data.trades || [];
+      const badge = document.getElementById('countMarketTrades');
+      if (badge) badge.innerText = trades.length;
+
+      const tbody = document.getElementById('marketTradesTableBody');
+      if (tbody) {
+        if (trades.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-dim);">Listening for live market trade executions...</td></tr>`;
+        } else {
+          tbody.innerHTML = trades.map(tr => {
+            const val = (tr.price * tr.quantity).toFixed(2);
+            return `
+              <tr>
+                <td style="font-family:monospace; color:var(--text-dim);">${tr.time}</td>
+                <td><strong>${tr.symbol}</strong></td>
+                <td><span class="${tr.side === 'BUY' ? 'text-green' : 'text-red'}" style="font-weight:700;">${tr.side}</span></td>
+                <td style="font-weight:600;">$${tr.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td>${tr.quantity}</td>
+                <td>$${val}</td>
+                <td style="font-family:monospace; font-size:11px; color:var(--text-dim);">${tr.trade_id}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    }
+  } catch (err) {
+    console.debug('Market trades note:', err);
   }
 }
 
@@ -953,6 +992,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRealAgentDecisionsAndChat();
   fetchSystemLogs();
   fetchMarketQuotes();
+  fetchRealTimeMarketTrades();
 
   // Background refresh loops
   setInterval(fetchPerformanceMetrics, 3000);
@@ -960,7 +1000,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(fetchEvaluationStatus, 4000);
   setInterval(fetchRealAgentDecisionsAndChat, 5000);
   setInterval(fetchSystemLogs, 3000);
-  setInterval(fetchMarketQuotes, 5000);
+  setInterval(fetchMarketQuotes, 2000);
+  setInterval(fetchRealTimeMarketTrades, 2000);
 
   initWebSocket();
 });

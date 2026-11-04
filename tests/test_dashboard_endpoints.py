@@ -73,7 +73,14 @@ async def test_dashboard_static_and_evaluation():
         assert "quotes" in qdata
         print(f"Quotes verified: count={len(qdata['quotes'])}")
 
-        # 9. Test Health
+        # 9. Test Real-Time Public Trades Tape
+        trades_resp = await client.get("/api/market/trades?symbol=BTCUSDT&limit=10")
+        assert trades_resp.status_code == 200
+        tdata = trades_resp.json()
+        assert "trades" in tdata
+        print(f"Market trades tape verified: count={len(tdata['trades'])}")
+
+        # 10. Test Health
         health_resp = await client.get("/health")
         assert health_resp.status_code == 200
         hdata = health_resp.json()
