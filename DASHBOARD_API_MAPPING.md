@@ -34,3 +34,4 @@ To strictly honor Phase 4 ("*If a requested feature has no existing backend supp
    - The backend contains `YFinanceMarketDataProvider.get_historical_ohlcv()`, but had no dedicated lightweight REST route `/api/market/candles` returning formatted OHLCV JSON. Added lightweight adapter endpoint in `apps/api/main.py`.
 2. **Dedicated Evaluation Heartbeat Route:**
    - The evaluation runner writes directly to disk (`data/phase4_heartbeat.json` and `data_phase4e/phase4e_heartbeat.json`). A dedicated read-only endpoint `/api/evaluation/status` exposes these verified filesystem metrics directly to the dashboard without reading arbitrary disk paths on the client.
+

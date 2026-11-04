@@ -84,3 +84,4 @@ The system operates a hierarchical 16-agent institutional roster (`agents/roster
   - `LIVE_TRADING_ENABLED=false`
   - `MAX_DAILY_LOSS_PCT=0.01` (1.00% daily loss hard circuit breaker)
   - `MAX_PORTFOLIO_DRAWDOWN_PCT=0.06` (6.00% maximum portfolio drawdown limit)
+

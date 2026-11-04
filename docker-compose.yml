@@ -51,6 +51,7 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/app/data
+      - ./apps:/app/apps
 
   daemon:
     build:
@@ -71,6 +72,7 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/app/data
+      - ./apps:/app/apps
 
 volumes:
   postgres_data:
