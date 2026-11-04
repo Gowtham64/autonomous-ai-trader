@@ -43,3 +43,4 @@ primary_region = "sin" # Singapore (low latency to Delta / Asian markets)
   size = "shared-cpu-1x"
   memory = "1024mb"
   cpus = 1
+
