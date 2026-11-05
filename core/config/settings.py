@@ -107,8 +107,8 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str | None = None
     TELEGRAM_CHAT_ID: str | None = None
 
-    # Web Dashboard & Remote Access Authentication
-    AUTH_REQUIRED: bool = True
+    # Web Dashboard & Remote Access Authentication (False by default for paper monitoring)
+    AUTH_REQUIRED: bool = False
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = ""
     JWT_SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))

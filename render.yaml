@@ -12,7 +12,10 @@ services:
         value: "false"
       - key: EXCHANGE
         value: DELTA
+      - key: AUTH_REQUIRED
+        value: "false"
       - key: LLM_PROVIDER
         value: groq
       - key: GROQ_API_KEY
         sync: false
+
