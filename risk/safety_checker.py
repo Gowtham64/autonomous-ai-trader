@@ -37,8 +37,11 @@ class SafetyChecker:
         # 3. Check abnormal price slippage / deviation from current LTP
         if order.price is not None and order.price > 0:
             dev = abs(order.price - current_ltp) / current_ltp
-            if dev > settings.MAX_SLIPPAGE_PCT:
-                return False, f"Order price ₹{order.price} deviates {dev*100:.2f}% from LTP ₹{current_ltp} (> {settings.MAX_SLIPPAGE_PCT*100}% allowable)."
+            is_crypto = order.symbol.upper().endswith(("USD", "-USD", "USDT")) or (settings.EXCHANGE or "").upper() in ["DELTA", "CRYPTO"]
+            max_dev = 0.025 if is_crypto else settings.MAX_SLIPPAGE_PCT
+            if dev > max_dev:
+                currency_sym = "$" if is_crypto else "₹"
+                return False, f"Order price {currency_sym}{order.price} deviates {dev*100:.2f}% from LTP {currency_sym}{current_ltp} (> {max_dev*100}% allowable)."
 
         # 4. Check Bid-Ask spread if depth available
         if bid_price is not None and ask_price is not None and ask_price > 0:

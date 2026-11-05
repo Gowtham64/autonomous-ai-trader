@@ -61,6 +61,13 @@ class YFinanceMarketDataProvider(BaseMarketDataProvider):
             except Exception as e:
                 logger.debug(f"[Delta Market Data] Ticker fallback for {symbol}: {e}")
 
+            history = await self._get_delta_historical_ohlcv(symbol, interval="15m", period="1d")
+            if not history.empty:
+                clean_hist = history.dropna(subset=["close"])
+                if not clean_hist.empty:
+                    return float(clean_hist["close"].iloc[-1])
+            raise ValueError(f"Could not retrieve LTP for crypto symbol {symbol} from Delta Exchange")
+
         formatted_symbol = self._format_symbol(symbol)
         loop = asyncio.get_event_loop()
 
@@ -152,6 +159,8 @@ class YFinanceMarketDataProvider(BaseMarketDataProvider):
             delta_df = await self._get_delta_historical_ohlcv(symbol, interval, period)
             if not delta_df.empty:
                 return delta_df
+            # Delta crypto symbols are not valid on Yahoo Finance, return empty to prevent 401 crumb errors
+            return pd.DataFrame()
 
         formatted_symbol = self._format_symbol(symbol)
         loop = asyncio.get_event_loop()
@@ -210,6 +219,15 @@ class YFinanceMarketDataProvider(BaseMarketDataProvider):
                         }
             except Exception as e:
                 logger.debug(f"[Delta Market Data] Quote fallback for {symbol}: {e}")
+            return {
+                "symbol": symbol,
+                "ltp": 0.0,
+                "open": 0.0,
+                "previous_close": 0.0,
+                "change": 0.0,
+                "volume": 0.0,
+                "currency": "USD",
+            }
 
         formatted_symbol = self._format_symbol(symbol)
         loop = asyncio.get_event_loop()
@@ -250,6 +268,21 @@ class YFinanceMarketDataProvider(BaseMarketDataProvider):
         return await loop.run_in_executor(None, _fetch)
 
     async def get_fundamentals(self, symbol: str) -> dict:
+        if self._is_crypto(symbol):
+            return {
+                "symbol": symbol,
+                "market_cap": 0,
+                "pe_ratio": 0.0,
+                "pb_ratio": 0.0,
+                "roe": 0.0,
+                "debt_to_equity": 0.0,
+                "eps": 0.0,
+                "52w_high": 0.0,
+                "52w_low": 0.0,
+                "sector": "Cryptocurrency",
+                "industry": "Digital Assets",
+            }
+
         formatted_symbol = self._format_symbol(symbol)
         loop = asyncio.get_event_loop()
 

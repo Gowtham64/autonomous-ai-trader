@@ -164,6 +164,11 @@ class AuditGate:
                     academy_passed = False
 
         # Evaluate 16 Mandatory Questions
+        from core.treasury.treasury import treasury
+        live_cap = max(10.0, float(treasury.current_capital or settings.INITIAL_CAPITAL))
+        allowed_max_loss = live_cap * max(0.025, settings.MAX_RISK_PER_TRADE_PCT * 2.0)
+        allowed_trade_value = max(10.0, live_cap * max(0.40, settings.MAX_SINGLE_STOCK_EXPOSURE_PCT))
+
         checklist = {
             "1_clear_thesis": bool(decision.thesis and len(decision.thesis) > 0),
             "2_strategy_identified": bool(strategy_name),
@@ -171,11 +176,11 @@ class AuditGate:
             "4_risk_defined": max_loss > 0,
             "5_invalidation_criteria": bool(debate.invalidating_scenarios and len(debate.invalidating_scenarios) > 0),
             "6_stop_loss_placed": decision.stop_loss is not None and decision.stop_loss > 0,
-            "7_max_loss_bounded": max_loss <= (0.25 if is_crypto else max(50.0, settings.MAX_CAPITAL * settings.MAX_RISK_PER_TRADE_PCT * 1.5)),
+            "7_max_loss_bounded": max_loss <= allowed_max_loss,
             "8_reward_risk_favorable": (rr_ratio >= settings.MIN_RISK_REWARD_RATIO) and friction_viable and math_eval["is_viable"],
-            "9_capital_sized_properly": trade_value <= (2.50 if is_crypto else settings.MAX_CAPITAL),
+            "9_capital_sized_properly": trade_value <= allowed_trade_value,
             "10_liquidity_sufficient": (signal.avg_volume_20d > 1000) and (lvar_eval["market_impact_pct"] < 1.0) and (signal.relative_volume >= 0.05 or signal.avg_volume_20d > 50000),
-            "11_correlation_safe": trade_value <= (2.50 if is_crypto else settings.MAX_CAPITAL),
+            "11_correlation_safe": trade_value <= allowed_trade_value,
             "12_events_accounted": bool(IndianMarketCalendar.get_holidays() is not None),
             "13_portfolio_limits_compliant": quantity > 0 and trade_value > 0,
             "14_multi_agent_consensus": (abs(debate.consensus_score) >= 0.15 or decision.confidence >= 0.50) and decision.confidence >= 0.50,

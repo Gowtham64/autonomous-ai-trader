@@ -152,7 +152,8 @@ class PositionSizer:
 
         final_quantity = min(raw_quantity, max_qty_by_capital)
         if final_quantity <= 0:
-            final_quantity = max(1, max_qty_by_capital) if (effective_unit_cost <= max_capital_for_asset and stop_distance <= max_acceptable_trade_risk) else 0
+            if effective_unit_cost <= avail and stop_distance <= max_acceptable_trade_risk:
+                final_quantity = 1
 
         logger.info(
             f"Position Sizer: Total Eq {curr_sym}{self.total_equity:.2f}, Risk Amount {curr_sym}{risk_amount:.2f}, "

@@ -344,6 +344,7 @@ async def live_agent_evaluation_daemon_task():
 
 async def live_trading_execution_daemon_task():
     """Runs continuous 24/7 autonomous trading cycles that execute paper/live trades."""
+    global _daemon_instance, _daemon_is_running, _last_daemon_cycle
     logger.info("🚀 [Trading Engine] Starting 24/7 autonomous order execution daemon...")
     from execution.broker_factory import get_active_broker
     from scanner.quant_scanner import QuantMarketScanner
@@ -353,21 +354,26 @@ async def live_trading_execution_daemon_task():
 
     await asyncio.sleep(6.0)
 
-    try:
-        broker = get_active_broker(settings.EXCHANGE.lower() if settings.EXCHANGE else "delta")
-        funds = await broker.get_funds()
-        cap = float(funds.get("total_capital", 10.0))
-        kill_switch.reset("API Cloud Daemon")
-        provider = YFinanceMarketDataProvider()
-        scanner = QuantMarketScanner(provider=provider, universe="delta", max_concurrency=5)
-        daemon = AutonomousTradingDaemon(scanner=scanner, broker=broker, total_capital=cap, top_n_candidates=5)
-    except Exception as init_err:
-        logger.error(f"[Trading Engine] Init error: {init_err}")
-        return
+    while True:
+        try:
+            broker = get_active_broker(settings.EXCHANGE.lower() if settings.EXCHANGE else "delta")
+            funds = await broker.get_funds()
+            cap = float(funds.get("total_capital", 10.0))
+            kill_switch.reset("API Cloud Daemon")
+            provider = YFinanceMarketDataProvider()
+            scanner = QuantMarketScanner(provider=provider, universe="delta", max_concurrency=5)
+            _daemon_instance = AutonomousTradingDaemon(scanner=scanner, broker=broker, total_capital=cap, top_n_candidates=5)
+            _daemon_is_running = True
+            logger.info(f"✅ [Trading Engine] AutonomousTradingDaemon initialized successfully with capital ${cap:.2f}.")
+            break
+        except Exception as init_err:
+            logger.error(f"[Trading Engine] Init error (will retry in 10s): {init_err}")
+            await asyncio.sleep(10.0)
 
     while True:
         try:
-            summary = await daemon.run_single_cycle()
+            summary = await _daemon_instance.run_single_cycle()
+            _last_daemon_cycle = summary
             logger.info(f"🪙 [Trading Engine Cycle Completed]: {summary}")
         except Exception as cycle_err:
             logger.debug(f"[Trading Engine Cycle note]: {cycle_err}")
