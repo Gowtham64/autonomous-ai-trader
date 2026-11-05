@@ -274,7 +274,9 @@ class LLMRouter:
 
         # Build model list based on configured provider & available credentials
         models_to_try = []
-        if settings.LLM_PROVIDER == LLMProviderType.OLLAMA:
+        if (settings.LLM_PROVIDER == LLMProviderType.GROQ or settings.GROQ_API_KEY) and settings.GROQ_API_KEY:
+            models_to_try = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+        elif settings.LLM_PROVIDER == LLMProviderType.OLLAMA:
             models_to_try = ["ollama/llama3.2:1b"]
         elif settings.LLM_PROVIDER == LLMProviderType.GEMINI and settings.GEMINI_API_KEY:
             models_to_try = ["gemini-flash-latest"]
@@ -282,6 +284,8 @@ class LLMRouter:
             pool = await self._get_next_model_pool(model_name)
             models_to_try = pool[:2]
         else:
+            if settings.GROQ_API_KEY:
+                models_to_try.extend(["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
             if settings.GEMINI_API_KEY:
                 models_to_try.append("gemini-flash-latest")
             if settings.OPENROUTER_API_KEY:
@@ -295,7 +299,9 @@ class LLMRouter:
         last_error = None
         for current_model in models_to_try:
             try:
-                if current_model.startswith("ollama/"):
+                if current_model.startswith("openai/gpt-oss") or (settings.GROQ_API_KEY and settings.LLM_PROVIDER == LLMProviderType.GROQ):
+                    provider_override = LLMProviderType.GROQ
+                elif current_model.startswith("ollama/"):
                     provider_override = LLMProviderType.OLLAMA
                 elif current_model == "gemini-flash-latest":
                     provider_override = LLMProviderType.GEMINI
