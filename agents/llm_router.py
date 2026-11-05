@@ -77,8 +77,11 @@ class LLMRouter:
             )
         elif provider == LLMProviderType.GROQ and settings.GROQ_API_KEY:
             from langchain_openai import ChatOpenAI
+            target_model = model_name or "openai/gpt-oss-120b"
+            if target_model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3.2:1b", "default"]:
+                target_model = "openai/gpt-oss-120b"
             return ChatOpenAI(
-                model=model_name or "llama-3.3-70b-versatile",
+                model=target_model,
                 api_key=settings.GROQ_API_KEY,
                 base_url="https://api.groq.com/openai/v1",
                 temperature=0.2,
