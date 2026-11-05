@@ -488,7 +488,15 @@ async def get_funds():
 @app.get("/api/positions", dependencies=[Depends(get_current_user)])
 async def get_positions():
     broker = await get_active_broker()
-    positions = await broker.get_positions()
+    raw_positions = await broker.get_positions()
+    positions = []
+    for p in raw_positions:
+        p_dict = p.model_dump() if hasattr(p, "model_dump") else (p.dict() if hasattr(p, "dict") else dict(p))
+        p_dict["direction"] = p_dict.get("side", "BUY")
+        p_dict["mark_price"] = p_dict.get("mark_price") or p_dict.get("current_price") or p_dict.get("entry_price") or 0.0
+        p_dict["take_profit"] = p_dict.get("target_1") or p_dict.get("target") or 0.0
+        p_dict["strategy"] = "Multi-Timeframe Momentum"
+        positions.append(p_dict)
     return {"positions": positions}
 
 

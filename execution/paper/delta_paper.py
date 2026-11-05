@@ -12,10 +12,12 @@ Simulates:
 """
 
 import asyncio
+import json
 import os
 import time
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from core.logging import logger
@@ -54,11 +56,52 @@ class DeltaPaperBroker(BaseBroker):
         self.total_fees_paid = 0.0
         self.total_volume_usd = 0.0
         self.fill_delay_seconds = 0.05
+        self.state_file = Path("data/paper_broker_state.json")
+        self._load_state()
 
         logger.info(
             f"🛡️ [DeltaPaperBroker] Initialized high-fidelity paper broker with ${self.initial_capital:.2f} USD "
-            f"(Slippage: {self.slippage_pct*100:.2f}%, Taker Fee: {self.taker_fee_pct*100:.2f}%)"
+            f"(Positions: {len(self.positions)}, Orders: {len(self.orders)}, Slippage: {self.slippage_pct*100:.2f}%, Taker Fee: {self.taker_fee_pct*100:.2f}%)"
         )
+
+    def _save_state(self) -> None:
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "available_margin": self.available_margin,
+                "used_margin": self.used_margin,
+                "total_fees_paid": self.total_fees_paid,
+                "total_volume_usd": self.total_volume_usd,
+                "positions": {
+                    k: p.model_dump(mode="json") if hasattr(p, "model_dump") else p.dict()
+                    for k, p in self.positions.items()
+                },
+                "orders": {
+                    k: o.model_dump(mode="json") if hasattr(o, "model_dump") else o.dict()
+                    for k, o in self.orders.items()
+                },
+            }
+            with open(self.state_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=str)
+        except Exception as e:
+            logger.debug(f"[DeltaPaperBroker] State save notice: {e}")
+
+    def _load_state(self) -> None:
+        if not self.state_file.exists():
+            return
+        try:
+            with open(self.state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.available_margin = float(data.get("available_margin", self.available_margin))
+            self.used_margin = float(data.get("used_margin", self.used_margin))
+            self.total_fees_paid = float(data.get("total_fees_paid", 0.0))
+            self.total_volume_usd = float(data.get("total_volume_usd", 0.0))
+            for k, p_raw in data.get("positions", {}).items():
+                self.positions[k] = PositionSnapshot.model_validate(p_raw)
+            for k, o_raw in data.get("orders", {}).items():
+                self.orders[k] = OrderExecution.model_validate(o_raw)
+        except Exception as e:
+            logger.debug(f"[DeltaPaperBroker] State load notice: {e}")
 
     def _resolve_multiplier(self, symbol: str) -> float:
         mult = get_delta_contract_multiplier(symbol)
@@ -289,6 +332,7 @@ class DeltaPaperBroker(BaseBroker):
             executed_at=datetime.now(UTC),
         )
         self.orders[order_id] = exec_report
+        self._save_state()
 
         logger.info(
             f"✅ [DeltaPaperBroker] FILLED {order.action.value} {order.quantity}x {order.symbol} @ "
@@ -296,12 +340,45 @@ class DeltaPaperBroker(BaseBroker):
         )
         return exec_report
 
+    async def get_order_book(self) -> list[dict]:
+        orders_list = []
+        for o in self.orders.values():
+            orders_list.append({
+                "order_id": o.order_id,
+                "client_order_id": o.client_order_id,
+                "symbol": o.symbol,
+                "order_type": "MARKET",
+                "side": "BUY" if "BUY" in str(getattr(o, "action", "BUY")).upper() else "SELL",
+                "quantity": o.filled_quantity,
+                "price": o.average_price,
+                "status": o.status.value if hasattr(o.status, "value") else str(o.status),
+                "timestamp": o.executed_at.isoformat() if hasattr(o.executed_at, "isoformat") else str(o.executed_at),
+            })
+        return orders_list
+
+    async def get_trade_book(self) -> list[dict]:
+        trades_list = []
+        for o in self.orders.values():
+            if o.status == OrderStatus.FILLED:
+                trades_list.append({
+                    "trade_id": o.order_id,
+                    "order_id": o.order_id,
+                    "symbol": o.symbol,
+                    "side": "BUY" if "BUY" in str(getattr(o, "action", "BUY")).upper() else "SELL",
+                    "quantity": o.filled_quantity,
+                    "price": o.average_price,
+                    "timestamp": o.executed_at.isoformat() if hasattr(o.executed_at, "isoformat") else str(o.executed_at),
+                })
+        return trades_list
+
     async def cancel_order(self, order_id: str, product_id: int | None = None) -> bool:
         if order_id in self.orders:
             self.orders[order_id].status = OrderStatus.CANCELLED
+            self._save_state()
             return True
         if order_id in self.open_orders:
             del self.open_orders[order_id]
+            self._save_state()
             return True
         return False
 
