@@ -342,6 +342,38 @@ async def live_agent_evaluation_daemon_task():
         await asyncio.sleep(8.0)
 
 
+async def live_trading_execution_daemon_task():
+    """Runs continuous 24/7 autonomous trading cycles that execute paper/live trades."""
+    logger.info("🚀 [Trading Engine] Starting 24/7 autonomous order execution daemon...")
+    from execution.broker_factory import get_active_broker
+    from scanner.quant_scanner import QuantMarketScanner
+    from market.providers.yfinance_provider import YFinanceMarketDataProvider
+    from apps.daemon.state_machine import AutonomousTradingDaemon
+    from risk.kill_switch import kill_switch
+
+    await asyncio.sleep(6.0)
+
+    try:
+        broker = get_active_broker(settings.EXCHANGE.lower() if settings.EXCHANGE else "delta")
+        funds = await broker.get_funds()
+        cap = float(funds.get("total_capital", 10.0))
+        kill_switch.reset("API Cloud Daemon")
+        provider = YFinanceMarketDataProvider()
+        scanner = QuantMarketScanner(provider=provider, universe="delta", max_concurrency=5)
+        daemon = AutonomousTradingDaemon(scanner=scanner, broker=broker, total_capital=cap, top_n_candidates=5)
+    except Exception as init_err:
+        logger.error(f"[Trading Engine] Init error: {init_err}")
+        return
+
+    while True:
+        try:
+            summary = await daemon.run_single_cycle()
+            logger.info(f"🪙 [Trading Engine Cycle Completed]: {summary}")
+        except Exception as cycle_err:
+            logger.debug(f"[Trading Engine Cycle note]: {cycle_err}")
+        await asyncio.sleep(45.0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -356,6 +388,10 @@ async def lifespan(app: FastAPI):
     agent_task = asyncio.create_task(live_agent_evaluation_daemon_task())
     background_api_tasks.add(agent_task)
     agent_task.add_done_callback(background_api_tasks.discard)
+
+    trading_task = asyncio.create_task(live_trading_execution_daemon_task())
+    background_api_tasks.add(trading_task)
+    trading_task.add_done_callback(background_api_tasks.discard)
 
     # Start continuous off-market training daemon
     from training.continuous_runner import continuous_training_daemon
