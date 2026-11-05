@@ -116,7 +116,7 @@ _live_active_agent_actions: list[dict] = [
 ]
 
 async def get_active_broker():
-    broker = get_configured_broker()
+    broker = get_configured_broker(settings.EXCHANGE.lower() if settings.EXCHANGE else None)
     if settings.TRADING_MODE == TradingMode.LIVE:
         if hasattr(broker, "_is_authenticated") and not broker._is_authenticated:
             await broker.authenticate_session(force=False)
@@ -1556,18 +1556,24 @@ async def run_single_daemon_cycle():
     from scanner.quant_scanner import QuantMarketScanner
     from core.treasury.treasury import treasury
 
-    broker = await get_active_broker()
-    provider = YFinanceMarketDataProvider()
-    scanner = QuantMarketScanner(provider=provider, universe="bootstrap", max_concurrency=5)
-    daemon = AutonomousTradingDaemon(
-        scanner=scanner,
-        broker=broker,
-        total_capital=treasury.current_capital,
-        top_n_candidates=3,
-    )
-    summary = await daemon.run_single_cycle()
-    _last_daemon_cycle = summary
-    return {"status": "SUCCESS", "cycle_summary": summary}
+    try:
+        if _daemon_instance is None:
+            broker = await get_active_broker()
+            provider = YFinanceMarketDataProvider()
+            target_univ = "delta" if (settings.EXCHANGE or "").lower() == "delta" else "bootstrap"
+            scanner = QuantMarketScanner(provider=provider, universe=target_univ, max_concurrency=5)
+            _daemon_instance = AutonomousTradingDaemon(
+                scanner=scanner,
+                broker=broker,
+                total_capital=treasury.current_capital,
+                top_n_candidates=3,
+            )
+        summary = await _daemon_instance.run_single_cycle()
+        _last_daemon_cycle = summary
+        return {"status": "SUCCESS", "cycle_summary": summary}
+    except Exception as e:
+        logger.error(f"[Daemon Cycle Endpoint Error]: {e}")
+        return {"status": "ERROR", "message": str(e)}
 
 
 
