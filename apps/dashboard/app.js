@@ -406,6 +406,15 @@ async function fetchPerformanceMetrics() {
       document.getElementById('kpiWinRate').innerText = winRate;
       document.getElementById('kpiWinLossRatio').innerText = `(${winTrades} / ${totalTrades} trades)`;
 
+      const closedEl = document.getElementById('kpiClosedTradesCount');
+      if (closedEl) closedEl.innerText = `${totalTrades} closed trades`;
+
+      const expEl = document.getElementById('kpiExpectancy');
+      if (expEl) {
+        const exp = totalTrades > 0 ? (realized / totalTrades).toFixed(2) : '0.00';
+        expEl.innerText = `Exp: $${exp} / trade`;
+      }
+
       const pf = metrics.profit_factor !== undefined && metrics.profit_factor > 0 ? metrics.profit_factor.toFixed(2) : '—';
       document.getElementById('kpiProfitFactor').innerText = pf;
 
@@ -418,6 +427,11 @@ async function fetchPerformanceMetrics() {
       document.getElementById('perfWinLoss').innerText = `${winTrades} / ${lossTrades}`;
       document.getElementById('perfWinRate').innerText = winRate;
       document.getElementById('perfProfitFactor').innerText = pf;
+
+      const avgWinEl = document.getElementById('perfAvgWin');
+      if (avgWinEl) avgWinEl.innerText = metrics.avg_win !== undefined ? `$${metrics.avg_win.toFixed(2)}` : '—';
+      const avgLossEl = document.getElementById('perfAvgLoss');
+      if (avgLossEl) avgLossEl.innerText = metrics.avg_loss !== undefined ? `$${metrics.avg_loss.toFixed(2)}` : '—';
 
       // Update Equity Curve Chart with real verified progression
       if (equitySeries && data.equity_history && data.equity_history.length > 0) {

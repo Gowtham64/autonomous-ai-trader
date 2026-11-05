@@ -2,7 +2,11 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+try:
+    from datetime import UTC, datetime
+except ImportError:
+    from datetime import datetime, timezone
+    UTC = timezone.utc
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -506,10 +510,81 @@ async def get_positions():
     return {"positions": positions}
 
 
+async def get_unified_trade_history() -> list[dict]:
+    """Returns the unified list of completed trades from database trade journal and verified ledger files."""
+    import csv
+    from pathlib import Path
+    from database.session import AsyncSessionLocal
+    from database.models.tables import TradeJournalEntity
+    from sqlalchemy import select
+
+    root = Path(__file__).resolve().parent.parent.parent
+    completed = []
+    seen = set()
+
+    # 1. Fetch real completed trades from database TradeJournal (live executions)
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(TradeJournalEntity).order_by(TradeJournalEntity.logged_at.desc())
+            res = await session.execute(stmt)
+            for j in res.scalars():
+                t_key = f"{j.symbol}_{round(j.entry_price or 0.0, 4)}_{round(j.exit_price or 0.0, 4)}_{j.logged_at}"
+                if t_key not in seen:
+                    seen.add(t_key)
+                    completed.append({
+                        "trade_id": str(j.id),
+                        "symbol": j.symbol,
+                        "side": "BUY" if "BUY" in (j.reflection_notes or "").upper() else "SELL",
+                        "quantity": 1.0,
+                        "contract_multiplier": 1.0,
+                        "entry_price": float(j.entry_price or 0.0),
+                        "exit_price": float(j.exit_price or 0.0),
+                        "exit_reason": j.exit_reason or "TARGET_EXIT",
+                        "gross_pnl": float(j.pnl or 0.0),
+                        "net_pnl": float(j.pnl or 0.0),
+                        "total_fee": 0.0,
+                        "account_equity_after": 0.0,
+                        "timestamp": j.logged_at.strftime("%Y-%m-%d %H:%M:%S UTC") if j.logged_at else "—",
+                    })
+    except Exception as e:
+        logger.debug(f"[UnifiedTrades] DB journal read note: {e}")
+
+    # 2. Add verified ledger files if not already in list
+    ledger_files = [root / "PAPER_7DAY_TRADE_LEDGER.csv", root / "PHASE4_TRADE_LEDGER.csv"]
+    for l_path in ledger_files:
+        if l_path.exists():
+            try:
+                with open(l_path, mode="r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        t_id = row.get("trade_id", "—")
+                        t_key = f"ledger_{t_id}_{row.get('symbol')}_{row.get('timestamp')}"
+                        if t_key not in seen:
+                            seen.add(t_key)
+                            completed.append({
+                                "trade_id": t_id,
+                                "symbol": row.get("symbol", "—"),
+                                "side": row.get("direction", "BUY"),
+                                "quantity": float(row.get("quantity", 1)),
+                                "contract_multiplier": float(row.get("contract_multiplier", 1.0)),
+                                "entry_price": float(row.get("entry_price", 0.0)),
+                                "exit_price": float(row.get("exit_price", 0.0)),
+                                "exit_reason": row.get("exit_reason", "TARGET_EXIT"),
+                                "gross_pnl": float(row.get("gross_pnl", 0.0)),
+                                "net_pnl": float(row.get("net_pnl", 0.0)),
+                                "total_fee": float(row.get("total_fee", row.get("total_commission", 0.0))),
+                                "account_equity_after": float(row.get("account_equity_after", 0.0)),
+                                "timestamp": row.get("timestamp", "—"),
+                            })
+            except Exception as e:
+                logger.debug(f"Ledger parse note: {e}")
+
+    return completed
+
+
 @app.get("/api/orders")
 async def get_orders():
     """Returns all real placed orders and historical completed trades from the database and ledger."""
-    import csv
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent
 
@@ -518,32 +593,7 @@ async def get_orders():
     broker_orders = await broker.get_order_book()
     broker_trades = await broker.get_trade_book()
 
-    # Load real completed trades from verified ledger files
-    completed_trades = []
-    ledger_files = [root / "PAPER_7DAY_TRADE_LEDGER.csv", root / "PHASE4_TRADE_LEDGER.csv"]
-    for l_path in ledger_files:
-        if l_path.exists():
-            try:
-                with open(l_path, mode="r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        completed_trades.append({
-                            "trade_id": row.get("trade_id", "—"),
-                            "symbol": row.get("symbol", "—"),
-                            "side": row.get("direction", "BUY"),
-                            "quantity": float(row.get("quantity", 1)),
-                            "contract_multiplier": float(row.get("contract_multiplier", 1.0)),
-                            "entry_price": float(row.get("entry_price", 0.0)),
-                            "exit_price": float(row.get("exit_price", 0.0)),
-                            "exit_reason": row.get("exit_reason", "TARGET_EXIT"),
-                            "gross_pnl": float(row.get("gross_pnl", 0.0)),
-                            "net_pnl": float(row.get("net_pnl", 0.0)),
-                            "total_fee": float(row.get("total_fee", row.get("total_commission", 0.0))),
-                            "account_equity_after": float(row.get("account_equity_after", 0.0)),
-                            "timestamp": row.get("timestamp", "—"),
-                        })
-            except Exception as e:
-                logger.debug(f"Ledger parse note: {e}")
+    completed_trades = await get_unified_trade_history()
 
     # Load audit records if db orders are sparse
     audit_orders = []
@@ -602,7 +652,28 @@ async def get_performance():
     positions = await broker.get_positions()
     metrics = treasury.get_metrics()
 
-    # If in-memory treasury has zero trades, enrich with real 7-day paper evaluation telemetry
+    completed_trades = await get_unified_trade_history()
+    total_trades = len(completed_trades)
+    winning_trades = sum(1 for t in completed_trades if (t.get("net_pnl") or 0.0) > 0)
+    losing_trades = sum(1 for t in completed_trades if (t.get("net_pnl") or 0.0) < 0)
+    win_rate = round((winning_trades / max(1, total_trades)) * 100, 1)
+    gross_win = sum(t["net_pnl"] for t in completed_trades if (t.get("net_pnl") or 0.0) > 0)
+    gross_loss = abs(sum(t["net_pnl"] for t in completed_trades if (t.get("net_pnl") or 0.0) < 0))
+    profit_factor = round(gross_win / max(0.01, gross_loss), 2)
+    avg_win = round(gross_win / max(1, winning_trades), 2)
+    avg_loss = round(gross_loss / max(1, losing_trades), 2)
+    realized_pnl = round(sum(t.get("net_pnl", 0.0) for t in completed_trades), 2)
+
+    metrics["total_trades"] = total_trades
+    metrics["winning_trades"] = winning_trades
+    metrics["losing_trades"] = losing_trades
+    metrics["win_rate"] = win_rate
+    metrics["profit_factor"] = profit_factor
+    metrics["avg_win"] = avg_win
+    metrics["avg_loss"] = avg_loss
+    if realized_pnl != 0.0:
+        metrics["realized_pnl"] = realized_pnl
+
     root = Path(__file__).resolve().parent.parent.parent
     telemetry_file = root / "data" / "paper_7day_telemetry.json"
     equity_history = []
@@ -612,16 +683,16 @@ async def get_performance():
             with open(telemetry_file, mode="r", encoding="utf-8") as f:
                 tel_data = json.load(f)
                 m = tel_data.get("metrics", {})
-                if metrics.get("total_trades", 0) == 0:
+                if total_trades == 0:
                     metrics["total_trades"] = m.get("trades_closed", 152)
                     metrics["winning_trades"] = m.get("winning_trades", 111)
                     metrics["losing_trades"] = m.get("losing_trades", 41)
                     metrics["realized_pnl"] = round(m.get("net_pnl", 89.45), 2)
                     metrics["win_rate"] = round((m.get("winning_trades", 111) / max(1, m.get("trades_closed", 152))) * 100, 1)
-                    gross_profit = m.get("gross_profit", 112.78)
-                    gross_loss = abs(m.get("gross_loss", 20.31))
-                    metrics["profit_factor"] = round(gross_profit / max(0.01, gross_loss), 2)
-                    metrics["max_drawdown_pct"] = round(m.get("max_drawdown", 1.94), 2)
+                    gw = m.get("gross_profit", 112.78)
+                    gl = abs(m.get("gross_loss", 20.31))
+                    metrics["profit_factor"] = round(gw / max(0.01, gl), 2)
+                metrics["max_drawdown_pct"] = round(m.get("max_drawdown", 1.94), 2)
 
                 # Extract real daily equity points
                 for ds in tel_data.get("daily_summaries", []):
