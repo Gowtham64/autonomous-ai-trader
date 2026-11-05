@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     DELTA_MAX_LEVERAGE: float = 5.0                     # Max leverage gate for crypto perps (5x with strict 1.5% SL defense)
     DELTA_IS_TESTNET: bool = False
 
+    # AI Foundation Model (Kronos PyTorch - keep False for 512MB RAM cloud tiers)
+    ENABLE_KRONOS_MODEL: bool = False
+
     # Telegram Alerting
     TELEGRAM_BOT_TOKEN: str | None = None
     TELEGRAM_CHAT_ID: str | None = None

@@ -51,7 +51,7 @@ class AutonomousTradingDaemon:
             research_desk=self.research_desk,
             debate_desk=self.debate_desk,
             fund_manager=self.fund_manager,
-            include_kronos=True,
+            include_kronos=False,
         )
         self.risk_engine = DeterministicRiskEngine(total_equity=total_capital, peak_equity=total_capital)
         self.position_sizer = PositionSizer(total_equity=total_capital)

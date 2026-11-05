@@ -105,7 +105,10 @@ class KronosForecastService:
         self._is_initialized = False
 
     async def ensure_loaded(self) -> bool:
-        """Lazily loads the Kronos model and tokenizer into memory."""
+        """Lazily loads the Kronos model and tokenizer into memory if explicitly enabled."""
+        if os.getenv("ENABLE_KRONOS_MODEL", "false").lower() != "true":
+            return False
+
         if self._is_initialized:
             return True
 
