@@ -20,6 +20,11 @@ class LayaSystemOneService:
         self._init_lock = asyncio.Lock()
 
     def _sync_init(self) -> None:
+        import os
+        if os.getenv("ENABLE_LAYA_MODEL", "false").lower() != "true":
+            self._initialized = True
+            self._router = None
+            return
         try:
             from laya import Router
             self._router = Router()

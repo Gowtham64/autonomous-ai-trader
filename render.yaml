@@ -18,6 +18,8 @@ services:
         value: groq
       - key: ENABLE_KRONOS_MODEL
         value: "false"
+      - key: ENABLE_LAYA_MODEL
+        value: "false"
       - key: GROQ_API_KEY
         sync: false
 
