@@ -22,7 +22,20 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
+
+try:
+    from scipy.stats import norm
+except ImportError:
+    class _NormFallback:
+        @staticmethod
+        def cdf(x: float) -> float:
+            return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+        @staticmethod
+        def pdf(x: float) -> float:
+            return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+    norm = _NormFallback()
 
 from core.logging import logger
 
