@@ -37,6 +37,7 @@ env/
 *.sqlite
 *.sqlite3
 trading_office.db
+bin/
 
 # Runtime logs
 logs/
