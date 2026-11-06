@@ -579,7 +579,7 @@ async def get_positions():
     return {"positions": positions}
 
 
-async def get_unified_trade_history() -> list[dict]:
+async def get_unified_trade_history(include_historical_ledgers: bool = True) -> list[dict]:
     """Returns the unified list of completed trades from database trade journal and verified ledger files."""
     import csv
     from pathlib import Path
@@ -643,35 +643,36 @@ async def get_unified_trade_history() -> list[dict]:
     except Exception as e:
         logger.debug(f"[UnifiedTrades] DB journal read note: {e}")
 
-    # 2. Add verified ledger files if not already in list
-    ledger_files = [root / "PAPER_7DAY_TRADE_LEDGER.csv", root / "PHASE4_TRADE_LEDGER.csv"]
-    for l_path in ledger_files:
-        if l_path.exists():
-            try:
-                with open(l_path, mode="r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        t_id = row.get("trade_id", "—")
-                        t_key = f"ledger_{t_id}_{row.get('symbol')}_{row.get('timestamp')}"
-                        if t_key not in seen:
-                            seen.add(t_key)
-                            completed.append({
-                                "trade_id": t_id,
-                                "symbol": row.get("symbol", "—"),
-                                "side": row.get("direction", "BUY"),
-                                "quantity": float(row.get("quantity", 1)),
-                                "contract_multiplier": float(row.get("contract_multiplier", 1.0)),
-                                "entry_price": float(row.get("entry_price", 0.0)),
-                                "exit_price": float(row.get("exit_price", 0.0)),
-                                "exit_reason": row.get("exit_reason", "TARGET_EXIT"),
-                                "gross_pnl": float(row.get("gross_pnl", 0.0)),
-                                "net_pnl": float(row.get("net_pnl", 0.0)),
-                                "total_fee": float(row.get("total_fee", row.get("total_commission", 0.0))),
-                                "account_equity_after": float(row.get("account_equity_after", 0.0)),
-                                "timestamp": row.get("timestamp", "—"),
-                            })
-            except Exception as e:
-                logger.debug(f"Ledger parse note: {e}")
+    # 2. Add verified ledger files if requested
+    if include_historical_ledgers:
+        ledger_files = [root / "PAPER_7DAY_TRADE_LEDGER.csv", root / "PHASE4_TRADE_LEDGER.csv"]
+        for l_path in ledger_files:
+            if l_path.exists():
+                try:
+                    with open(l_path, mode="r", encoding="utf-8") as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            t_id = row.get("trade_id", "—")
+                            t_key = f"ledger_{t_id}_{row.get('symbol')}_{row.get('timestamp')}"
+                            if t_key not in seen:
+                                seen.add(t_key)
+                                completed.append({
+                                    "trade_id": t_id,
+                                    "symbol": row.get("symbol", "—"),
+                                    "side": row.get("direction", "BUY"),
+                                    "quantity": float(row.get("quantity", 1)),
+                                    "contract_multiplier": float(row.get("contract_multiplier", 1.0)),
+                                    "entry_price": float(row.get("entry_price", 0.0)),
+                                    "exit_price": float(row.get("exit_price", 0.0)),
+                                    "exit_reason": row.get("exit_reason", "TARGET_EXIT"),
+                                    "gross_pnl": float(row.get("gross_pnl", 0.0)),
+                                    "net_pnl": float(row.get("net_pnl", 0.0)),
+                                    "total_fee": float(row.get("total_fee", row.get("total_commission", 0.0))),
+                                    "account_equity_after": float(row.get("account_equity_after", 0.0)),
+                                    "timestamp": row.get("timestamp", "—"),
+                                })
+                except Exception as e:
+                    logger.debug(f"Ledger parse note: {e}")
 
     return completed
 
@@ -769,23 +770,21 @@ async def get_performance():
         except Exception:
             pass
 
-    completed_trades = await get_unified_trade_history()
-    active_trades = [t for t in completed_trades if (t.get("timestamp") or "") >= session_start_str] if session_start_str else completed_trades
+    # Strictly isolate live executions for today's session (no historical October CSV ledgers)
+    live_trades = await get_unified_trade_history(include_historical_ledgers=False)
+    today_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
+    today_trades = [t for t in live_trades if (t.get("timestamp") or "").startswith(today_prefix)]
 
-    # If no trades have concluded yet in the current active session, display verified baseline cumulative stats
-    if not active_trades and completed_trades:
-        active_trades = completed_trades
-
-    total_trades = len(active_trades)
-    winning_trades = sum(1 for t in active_trades if (t.get("net_pnl") or 0.0) > 0)
-    losing_trades = sum(1 for t in active_trades if (t.get("net_pnl") or 0.0) < 0)
-    win_rate = round((winning_trades / max(1, total_trades)) * 100, 1) if total_trades > 0 else 73.1
-    gross_win = sum(t["net_pnl"] for t in active_trades if (t.get("net_pnl") or 0.0) > 0)
-    gross_loss = abs(sum(t["net_pnl"] for t in active_trades if (t.get("net_pnl") or 0.0) < 0))
-    profit_factor = round(gross_win / max(0.01, gross_loss), 2) if gross_loss > 0 else (gross_win if gross_win > 0 else 5.28)
-    avg_win = round(gross_win / max(1, winning_trades), 2) if winning_trades > 0 else 0.98
-    avg_loss = round(gross_loss / max(1, losing_trades), 2) if losing_trades > 0 else 0.52
-    realized_pnl = round(sum(t.get("net_pnl", 0.0) for t in active_trades), 2)
+    total_trades = len(today_trades)
+    winning_trades = sum(1 for t in today_trades if (t.get("net_pnl") or 0.0) > 0)
+    losing_trades = sum(1 for t in today_trades if (t.get("net_pnl") or 0.0) < 0)
+    win_rate = round((winning_trades / max(1, total_trades)) * 100, 1) if total_trades > 0 else 0.0
+    gross_win = sum(t["net_pnl"] for t in today_trades if (t.get("net_pnl") or 0.0) > 0)
+    gross_loss = abs(sum(t["net_pnl"] for t in today_trades if (t.get("net_pnl") or 0.0) < 0))
+    profit_factor = round(gross_win / max(0.01, gross_loss), 2) if gross_loss > 0 else (gross_win if gross_win > 0 else 0.0)
+    avg_win = round(gross_win / max(1, winning_trades), 2) if winning_trades > 0 else 0.0
+    avg_loss = round(gross_loss / max(1, losing_trades), 2) if losing_trades > 0 else 0.0
+    realized_pnl = round(sum(t.get("net_pnl", 0.0) for t in today_trades), 2)
 
     target_start_cap = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
     total_cap = funds.get("total_capital", target_start_cap)
