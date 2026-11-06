@@ -79,9 +79,19 @@ class FundManagerAgent:
             # Deterministic quantitative synthesis fallback based on fundamentals, trend, and news
             is_crypto = ("USD" in signal.symbol.upper()) or (signal.exchange and signal.exchange.upper() in ["DELTA", "CRYPTO"])
             cs = "$" if is_crypto else "₹"
-            px_nd = 4 if is_crypto else 2
-            entry = signal.ltp
-            atr = max(signal.atr_14, signal.ltp * 0.01)
+            entry = signal.ltp or 1.0
+            if is_crypto:
+                if entry < 0.001:
+                    px_nd = 8
+                elif entry < 0.1:
+                    px_nd = 6
+                elif entry < 10.0:
+                    px_nd = 4
+                else:
+                    px_nd = 2
+            else:
+                px_nd = 2
+            atr = max(signal.atr_14, entry * 0.01)
             stop_dist = min(atr * 0.8, entry * 0.015)
 
             logger.info(
@@ -118,7 +128,7 @@ class FundManagerAgent:
                     sl = min(sl, round(kronos_report.suggested_stop, px_nd))
                     stop_dist = max(entry * 0.001, sl - entry)
 
-                target_mult = 2.5 if (is_news_bearish or (kronos_report and kronos_report.confidence >= 0.75)) else 2.1
+                target_mult = 2.5 if (is_news_bearish or (kronos_report and kronos_report.confidence >= 0.75)) else 2.2
                 tgt_1 = round(entry - (stop_dist * target_mult), px_nd)
                 tgt_2 = round(entry - (stop_dist * (target_mult + 1.5)), px_nd)
 
@@ -192,7 +202,7 @@ class FundManagerAgent:
                     sl = max(sl, round(kronos_report.suggested_stop, px_nd))
                     stop_dist = max(entry * 0.001, entry - sl)
 
-                target_mult = 2.5 if (is_fund_bullish and is_news_bullish) else 2.1
+                target_mult = 2.5 if (is_fund_bullish and is_news_bullish) else 2.2
                 tgt_1 = round(entry + (stop_dist * target_mult), px_nd)
                 tgt_2 = round(entry + (stop_dist * (target_mult + 1.5)), px_nd)
 

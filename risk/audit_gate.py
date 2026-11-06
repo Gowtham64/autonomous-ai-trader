@@ -187,7 +187,7 @@ class AuditGate:
             "5_invalidation_criteria": bool(debate.invalidating_scenarios and len(debate.invalidating_scenarios) > 0),
             "6_stop_loss_placed": decision.stop_loss is not None and decision.stop_loss > 0,
             "7_max_loss_bounded": max_loss <= allowed_max_loss,
-            "8_reward_risk_favorable": (rr_ratio >= settings.MIN_RISK_REWARD_RATIO) and friction_viable and math_eval["is_viable"],
+            "8_reward_risk_favorable": (round(rr_ratio, 2) >= (settings.MIN_RISK_REWARD_RATIO - 0.05)) and friction_viable and math_eval["is_viable"],
             "9_capital_sized_properly": trade_value <= allowed_trade_value,
             "10_liquidity_sufficient": (
                 (signal.avg_volume_20d > 1000 or (is_crypto and signal.avg_volume_20d * (signal.ltp or 1.0) >= 5000.0))

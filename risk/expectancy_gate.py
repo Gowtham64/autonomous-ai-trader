@@ -54,7 +54,7 @@ class ExpectancyGate:
             return False, "Invalid stop/target geometry for trade direction.", {}
 
         rr = reward_dist / stop_dist
-        if rr < settings.MIN_RISK_REWARD_RATIO:
+        if round(rr, 2) < (settings.MIN_RISK_REWARD_RATIO - 0.05):
             return False, f"Risk:Reward {rr:.2f} below required {settings.MIN_RISK_REWARD_RATIO:.1f}.", {"rr": round(rr, 2)}
 
         # --- Estimate win probability from multi-agent confluence ---

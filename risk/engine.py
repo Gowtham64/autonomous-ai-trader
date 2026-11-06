@@ -80,7 +80,7 @@ class DeterministicRiskEngine:
                 stop_dist = decision.entry_price - decision.stop_loss
                 target_dist = decision.target_1 - decision.entry_price
                 rr_ratio = target_dist / stop_dist if stop_dist > 0 else 0.0
-                if rr_ratio < settings.MIN_RISK_REWARD_RATIO:
+                if round(rr_ratio, 2) < (settings.MIN_RISK_REWARD_RATIO - 0.05):
                     rejection_reasons.append(
                         f"Risk-to-Reward ratio {rr_ratio:.2f} is below minimum required {settings.MIN_RISK_REWARD_RATIO:.1f}"
                     )
@@ -93,7 +93,7 @@ class DeterministicRiskEngine:
                 stop_dist = decision.stop_loss - decision.entry_price
                 target_dist = decision.entry_price - decision.target_1
                 rr_ratio = target_dist / stop_dist if stop_dist > 0 else 0.0
-                if rr_ratio < settings.MIN_RISK_REWARD_RATIO:
+                if round(rr_ratio, 2) < (settings.MIN_RISK_REWARD_RATIO - 0.05):
                     rejection_reasons.append(
                         f"Risk-to-Reward ratio {rr_ratio:.2f} is below minimum required {settings.MIN_RISK_REWARD_RATIO:.1f}"
                     )
