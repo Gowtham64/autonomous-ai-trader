@@ -754,6 +754,15 @@ async def get_performance():
             except Exception as e:
                 logger.debug(f"Telemetry parse note: {e}")
 
+    historical_baseline = {}
+    benchmark_file = root / "data" / "historical_benchmark_baseline.json"
+    if benchmark_file.exists():
+        try:
+            with open(benchmark_file, "r", encoding="utf-8") as f:
+                historical_baseline = json.load(f).get("metrics", {})
+        except Exception:
+            pass
+
     return {
         "live_funds": {
             "total_capital": total_cap,
@@ -768,6 +777,7 @@ async def get_performance():
         "open_positions": positions,
         "open_positions_count": len(positions),
         "metrics": metrics,
+        "historical_baseline": historical_baseline,
         "equity_history": equity_history,
         "history": treasury.history,
     }
