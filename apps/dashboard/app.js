@@ -386,8 +386,8 @@ async function fetchPerformanceMetrics() {
       const funds = data.live_funds || {};
       const metrics = data.metrics || {};
 
-      const equity = funds.total_capital !== undefined ? funds.total_capital : (data.total_capital || 1000.0);
-      const starting = funds.starting_capital !== undefined ? funds.starting_capital : 1000.0;
+      const starting = funds.starting_capital !== undefined ? funds.starting_capital : 6.0;
+      const equity = funds.total_capital !== undefined ? funds.total_capital : (data.total_capital || starting);
       const realized = metrics.realized_pnl || 0.0;
       const unrealized = funds.unrealized_pnl || 0.0;
       const netTotal = realized + unrealized;

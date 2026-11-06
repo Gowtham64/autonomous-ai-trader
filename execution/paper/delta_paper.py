@@ -209,7 +209,13 @@ class DeltaPaperBroker(BaseBroker):
             f"(Qty: {order.quantity}, Limit: ${order.price or 0.0})"
         )
         mult = self._resolve_multiplier(order.symbol)
-        base_price = order.price if (order.price and order.price > 0) else (order.stop_loss or 100.0)
+        pos = self.positions.get(f"POS-{order.symbol}")
+        pos_price = pos.current_price if (pos and pos.current_price > 0) else (pos.entry_price if pos else 1.0)
+        base_price = (
+            order.price
+            if (order.price and order.price > 0)
+            else (order.stop_loss if (order.stop_loss and order.stop_loss > 0) else pos_price)
+        )
 
         # 1. Simulate Slippage (adverse execution price) with adaptive precision
         decimals = 8 if base_price < 0.01 else (6 if base_price < 1.0 else 4)

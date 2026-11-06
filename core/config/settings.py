@@ -51,10 +51,10 @@ class Settings(BaseSettings):
     MODEL_REASONING: str = "gemini-flash-latest"
 
     # Capital & AI Treasury Settings (Bootstrap Model)
-    INITIAL_CAPITAL: float = 2000.0               # ₹2,000 bootstrap capital
-    MAX_CAPITAL: float = 2000.0                   # Current authorized trading capital
-    SURVIVAL_MODE_THRESHOLD_PCT: float = 0.80     # Trigger Survival Mode if capital falls below 80% (₹1,600)
-    DAILY_OPERATING_BUDGET: float = 5.0           # ₹5/day simulated infrastructure/API budget
+    INITIAL_CAPITAL: float = 6.0                  # $6 USD bootstrap capital
+    MAX_CAPITAL: float = 6.0                      # Current authorized trading capital
+    SURVIVAL_MODE_THRESHOLD_PCT: float = 0.80     # Trigger Survival Mode if capital falls below 80% ($4.80)
+    DAILY_OPERATING_BUDGET: float = 0.10          # $0.10/day simulated infrastructure/API budget
     MAX_ACTIVE_DYNAMIC_AGENTS: int = 4            # Strict limit on dynamic agent spawns
 
     # Risk Engine Constraints (Strict Deterministic Capital Preservation Limits)

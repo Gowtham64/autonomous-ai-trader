@@ -706,14 +706,15 @@ async def get_performance():
         except Exception as e:
             logger.debug(f"Telemetry parse note: {e}")
 
-    total_cap = funds.get("total_capital", 1000.0)
+    target_start_cap = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
+    total_cap = funds.get("total_capital", target_start_cap)
     if total_cap == 0.0 or total_cap is None:
-        total_cap = 1000.0
+        total_cap = target_start_cap
 
     return {
         "live_funds": {
             "total_capital": total_cap,
-            "starting_capital": 1000.0,
+            "starting_capital": target_start_cap,
             "available_margin": funds.get("available_margin", total_cap),
             "used_margin": funds.get("used_margin", 0.0),
             "unrealized_pnl": funds.get("unrealized_pnl", 0.0),
