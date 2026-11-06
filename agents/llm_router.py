@@ -85,6 +85,7 @@ class LLMRouter:
                 api_key=settings.GROQ_API_KEY,
                 base_url="https://api.groq.com/openai/v1",
                 temperature=0.2,
+                default_headers={"User-Agent": "AutonomousTrader/1.0"},
             )
         elif provider == LLMProviderType.OLLAMA or (model_name and model_name.startswith("ollama/")):
             from langchain_openai import ChatOpenAI
@@ -272,52 +273,32 @@ class LLMRouter:
             {"role": "user", "content": user_prompt},
         ]
 
-        # Build model list based on configured provider & available credentials
-        models_to_try = []
-        if (settings.LLM_PROVIDER == LLMProviderType.GROQ or settings.GROQ_API_KEY) and settings.GROQ_API_KEY:
-            models_to_try = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
-        elif settings.LLM_PROVIDER == LLMProviderType.OLLAMA:
-            models_to_try = ["ollama/llama3.2:1b"]
-        elif settings.LLM_PROVIDER == LLMProviderType.GEMINI and settings.GEMINI_API_KEY:
-            models_to_try = ["gemini-flash-latest"]
-        elif settings.LLM_PROVIDER == LLMProviderType.OPENROUTER and settings.OPENROUTER_API_KEY:
+        # Build model list in strict priority order: Groq -> Gemini -> OpenRouter -> Quant Fallback
+        models_to_try: list[tuple[LLMProviderType, str]] = []
+        if settings.GROQ_API_KEY:
+            for m in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
+                models_to_try.append((LLMProviderType.GROQ, m))
+        if settings.GEMINI_API_KEY:
+            for m in ["gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]:
+                models_to_try.append((LLMProviderType.GEMINI, m))
+        if settings.OPENROUTER_API_KEY:
             pool = await self._get_next_model_pool(model_name)
-            models_to_try = pool[:2]
-        else:
-            if settings.GROQ_API_KEY:
-                models_to_try.extend(["openai/gpt-oss-120b", "openai/gpt-oss-20b"])
-            if settings.GEMINI_API_KEY:
-                models_to_try.append("gemini-flash-latest")
-            if settings.OPENROUTER_API_KEY:
-                pool = await self._get_next_model_pool(model_name)
-                models_to_try.extend(pool[:2])
-            if settings.OPENAI_API_KEY:
-                models_to_try.append(settings.MODEL_FAST)
-            if settings.ANTHROPIC_API_KEY:
-                models_to_try.append(settings.MODEL_FAST)
+            for m in pool[:2]:
+                models_to_try.append((LLMProviderType.OPENROUTER, m))
 
         last_error = None
-        for current_model in models_to_try:
+        for provider_override, current_model in models_to_try:
             try:
-                if current_model.startswith("openai/gpt-oss") or (settings.GROQ_API_KEY and settings.LLM_PROVIDER == LLMProviderType.GROQ):
-                    provider_override = LLMProviderType.GROQ
-                elif current_model.startswith("ollama/"):
-                    provider_override = LLMProviderType.OLLAMA
-                elif current_model == "gemini-flash-latest":
-                    provider_override = LLMProviderType.GEMINI
-                else:
-                    provider_override = LLMProviderType.OPENROUTER
-
                 model = self._get_langchain_model(current_model, provider_override=provider_override)
                 if model is None:
                     continue
 
                 async with self._semaphore:
-                    if provider_override == LLMProviderType.OLLAMA:
+                    if provider_override in [LLMProviderType.OLLAMA, LLMProviderType.GROQ]:
                         raw_msg = await model.ainvoke(messages)
                         content = str(raw_msg.content) if hasattr(raw_msg, "content") else str(raw_msg)
                         res_obj = self._extract_json_from_text(content, schema)
-                        logger.info(f"[LLMRouter] Successfully extracted output via Ollama model: '{current_model}'")
+                        logger.info(f"[LLMRouter] Successfully extracted output via {provider_override.value} model: '{current_model}'")
                         return res_obj
 
                     # Method A: Try native with_structured_output for cloud models
@@ -325,11 +306,11 @@ class LLMRouter:
                         structured_model = model.with_structured_output(schema)
                         result = await structured_model.ainvoke(messages)
                         if isinstance(result, schema):
-                            logger.info(f"[LLMRouter] Successfully generated via model: '{current_model}'")
+                            logger.info(f"[LLMRouter] Successfully generated via {provider_override.value} model: '{current_model}'")
                             return result
                         if result:
                             res_obj = schema.model_validate(result)
-                            logger.info(f"[LLMRouter] Successfully generated via model: '{current_model}'")
+                            logger.info(f"[LLMRouter] Successfully generated via {provider_override.value} model: '{current_model}'")
                             return res_obj
                     except Exception:
                         # Method B: Direct invoke with text / reasoning JSON extraction
@@ -342,7 +323,7 @@ class LLMRouter:
                         if not content:
                             content = str(raw_msg)
                         res_obj = self._extract_json_from_text(content, schema)
-                        logger.info(f"[LLMRouter] Successfully extracted output via model: '{current_model}'")
+                        logger.info(f"[LLMRouter] Successfully extracted output via {provider_override.value} model: '{current_model}'")
                         return res_obj
 
             except Exception as err:
