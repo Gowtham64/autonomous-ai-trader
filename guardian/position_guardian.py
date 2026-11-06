@@ -263,8 +263,10 @@ class PositionGuardianWorker:
             # If position made a substantial peak gain (>= +0.60%) and has pulled back by >= 0.25%, lock gains!
             if peak_gain_pct >= 0.60 and pullback_from_peak_pct >= 0.25 and self._exit_compounds(current_ltp, is_short, mult):
                 self.interventions_count += 1
+                peak_px = self.state.lowest_price_seen if is_short else self.state.highest_price_seen
+                peak_txt = f"{peak_px:.4f}" if is_crypto else f"{peak_px:.2f}"
                 reason = (
-                    f"Performance Exit: Position peaked at {curr_sym}{self.state.highest_price_seen:.4f if is_crypto else self.state.highest_price_seen:.2f} (+{peak_gain_pct:.2f}%) "
+                    f"Performance Exit: Position peaked at {curr_sym}{peak_txt} (+{peak_gain_pct:.2f}%) "
                     f"and pulled back by -{pullback_from_peak_pct:.2f}%. Securing profit (+{pnl_pct:+.2f}%) on price action deceleration."
                 )
                 logger.info(f"🎯 [Performance Harvest] {self.state.symbol}: {reason}")

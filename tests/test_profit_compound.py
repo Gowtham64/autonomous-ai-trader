@@ -60,6 +60,31 @@ def test_guardian_banks_a_target_that_clears_fees():
     assert "Profit Target" in reason
 
 
+def test_profit_pullback_books_without_a_format_error():
+    pos = PositionSnapshot(
+        position_id="POS-SOLUSD",
+        symbol="SOLUSD",
+        exchange="DELTA",
+        side="BUY",
+        quantity=1,
+        entry_price=100.0,
+        current_price=100.7,
+        stop_loss=98.0,
+        target_1=110.0,
+        highest_price_seen=101.0,
+        lowest_price_seen=100.0,
+        unrealized_pnl=0.0,
+        opened_at=datetime.now(UTC),
+        is_active=True,
+    )
+    worker = PositionGuardianWorker(pos=pos, atr_14=2.0)
+    worker.state.highest_price_seen = 101.0
+    action, reason = asyncio.run(worker.evaluate_tick(current_ltp=100.7))
+    assert action.value == "TARGET_EXIT"
+    assert "Performance Exit" in reason
+    assert "$101.0000" in reason
+
+
 def test_winning_close_compounds_cash_and_keeps_the_original_stake():
     broker = DeltaPaperBroker(initial_capital=6.0, state_file=None)
 
