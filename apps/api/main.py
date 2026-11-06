@@ -679,30 +679,21 @@ async def get_unified_trade_history(include_historical_ledgers: bool = True) -> 
 
 @app.get("/api/orders")
 async def get_orders():
-    """Returns all real placed orders and historical completed trades from the database and ledger."""
+    """Returns all real placed orders and historical completed trades strictly for today's live session."""
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent
-
-    session_file = root / "data" / "session_state.json"
-    session_start_str = None
-    if session_file.exists():
-        try:
-            with open(session_file, mode="r", encoding="utf-8") as f:
-                s_data = json.load(f)
-                session_start_str = s_data.get("session_start")
-        except Exception:
-            pass
+    today_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
 
     broker = await get_active_broker()
     db_orders = await TradeRepository.get_recent_orders(limit=100)
     broker_orders = await broker.get_order_book()
     broker_trades = await broker.get_trade_book()
 
-    completed_trades = await get_unified_trade_history()
-    if session_start_str:
-        completed_trades = [t for t in completed_trades if (t.get("timestamp") or "") >= session_start_str]
+    # Completed trades isolated to today's live executions
+    completed_trades = await get_unified_trade_history(include_historical_ledgers=False)
+    completed_trades = [t for t in completed_trades if (t.get("timestamp") or "").startswith(today_prefix)]
 
-    # Load audit records if db orders are sparse
+    # Load audit records only for today
     audit_orders = []
     audit_file = root / "data" / "order_audit_records.json"
     if audit_file.exists():
@@ -724,10 +715,14 @@ async def get_orders():
             "executed_at": o.executed_at.isoformat() if hasattr(o.executed_at, "isoformat") else str(o.executed_at),
         }
         for o in db_orders
+        if (hasattr(o.executed_at, "strftime") and o.executed_at.strftime("%Y-%m-%d").startswith(today_prefix)) or str(o.executed_at).startswith(today_prefix)
     ]
 
-    # Combine with audit orders to ensure 100% real trade visibility
+    # Combine with audit orders only for today's session
     for ao in audit_orders:
+        ts = str(ao.get("timestamp", ""))
+        if not ts.startswith(today_prefix):
+            continue
         if not any(fo["order_id"] == ao.get("order_id") for fo in formatted_db_orders):
             formatted_db_orders.append({
                 "order_id": ao.get("order_id", "—"),
