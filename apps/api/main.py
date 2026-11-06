@@ -498,6 +498,39 @@ async def websocket_live_feed(websocket: WebSocket):
         pass
 
 
+_dynamic_ollama_bridge: dict[str, Any] = {
+    "url": None,
+    "last_heartbeat": 0.0,
+}
+
+
+@app.post("/api/ollama/register")
+async def register_macbook_ollama(data: dict):
+    """Auto-registers a live MacBook Ollama tunnel endpoint."""
+    import time
+    url = data.get("url")
+    if url:
+        _dynamic_ollama_bridge["url"] = url.rstrip("/")
+        _dynamic_ollama_bridge["last_heartbeat"] = time.time()
+        logger.info(f"🍏 [MacBook Bridge] Auto-registered Ollama at: {url}")
+        return {"status": "registered", "active_url": url}
+    return {"error": "Missing url"}
+
+
+@app.get("/api/ollama/status")
+async def get_macbook_ollama_status():
+    """Returns current active MacBook Ollama bridge status."""
+    import time
+    last = _dynamic_ollama_bridge["last_heartbeat"]
+    is_live = bool(last and (time.time() - last) < 90)
+    return {
+        "is_active": is_live,
+        "url": _dynamic_ollama_bridge["url"] if is_live else None,
+        "last_seen_seconds_ago": round(time.time() - last, 1) if last else None,
+        "active_llm_mode": "MacBook Local Ollama" if is_live else "Cloud Groq LPU + Gemini",
+    }
+
+
 @app.get("/health")
 async def health():
     return {

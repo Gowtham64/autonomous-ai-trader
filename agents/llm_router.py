@@ -28,7 +28,12 @@ class LLMRouter:
         self._model_index = 0
         self._lock = asyncio.Lock()
 
-    def _get_langchain_model(self, model_name: str | None = None, provider_override: LLMProviderType | None = None):
+    def _get_langchain_model(
+        self,
+        model_name: str | None = None,
+        provider_override: LLMProviderType | None = None,
+        base_url_override: str | None = None,
+    ):
         provider = provider_override or self.provider_type
         if provider == LLMProviderType.GEMINI and settings.GEMINI_API_KEY:
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -90,9 +95,12 @@ class LLMRouter:
         elif provider == LLMProviderType.OLLAMA or (model_name and model_name.startswith("ollama/")):
             from langchain_openai import ChatOpenAI
             target_model = model_name.replace("ollama/", "") if model_name else "llama3.2:1b"
+            endpoint = (base_url_override or settings.OLLAMA_BASE_URL).rstrip("/")
+            if not endpoint.endswith("/v1"):
+                endpoint = f"{endpoint}/v1"
             return ChatOpenAI(
                 model=target_model,
-                base_url=f"{settings.OLLAMA_BASE_URL}/v1",
+                base_url=endpoint,
                 api_key="ollama",
                 temperature=0.2,
                 request_timeout=3.0,
@@ -273,34 +281,47 @@ class LLMRouter:
             {"role": "user", "content": user_prompt},
         ]
 
-        # Build model list in strict priority order: 1. Ollama -> 2. Groq -> 3. Gemini -> 4. OpenRouter -> 5. Quant Fallback
-        models_to_try: list[tuple[LLMProviderType, str]] = []
+        # Build model list in strict priority order: 1. MacBook Ollama (when awake) -> 2. Groq -> 3. Gemini -> 4. OpenRouter -> 5. Quant Fallback
+        import time
+        from apps.api.main import _dynamic_ollama_bridge
 
-        # 1. Ollama first (Local/Private LLM)
-        if settings.OLLAMA_BASE_URL:
-            models_to_try.append((LLMProviderType.OLLAMA, "llama3.2:1b"))
-            models_to_try.append((LLMProviderType.OLLAMA, "qwen2.5:1.5b"))
+        models_to_try: list[tuple[LLMProviderType, str, str | None]] = []
 
-        # 2. Groq second (High-speed cloud LPU)
+        last_hb = _dynamic_ollama_bridge.get("last_heartbeat", 0.0)
+        is_mac_live = bool(last_hb and (time.time() - last_hb) < 90)
+        mac_tunnel_url = _dynamic_ollama_bridge.get("url")
+
+        # 1. Ollama (Priority #1 if MacBook is awake and registered)
+        if is_mac_live and mac_tunnel_url:
+            models_to_try.append((LLMProviderType.OLLAMA, "llama3.2:1b", mac_tunnel_url))
+            models_to_try.append((LLMProviderType.OLLAMA, "qwen2.5:1.5b", mac_tunnel_url))
+        elif settings.OLLAMA_BASE_URL and settings.OLLAMA_BASE_URL != "http://localhost:11434":
+            models_to_try.append((LLMProviderType.OLLAMA, "llama3.2:1b", settings.OLLAMA_BASE_URL))
+
+        # 2. Groq second (High-speed cloud LPU when MacBook off or exhausted)
         if settings.GROQ_API_KEY:
             for m in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
-                models_to_try.append((LLMProviderType.GROQ, m))
+                models_to_try.append((LLMProviderType.GROQ, m, None))
 
         # 3. Gemini third (Google cloud multimodal)
         if settings.GEMINI_API_KEY:
             for m in ["gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]:
-                models_to_try.append((LLMProviderType.GEMINI, m))
+                models_to_try.append((LLMProviderType.GEMINI, m, None))
 
         # 4. OpenRouter fourth
         if settings.OPENROUTER_API_KEY:
             pool = await self._get_next_model_pool(model_name)
             for m in pool[:2]:
-                models_to_try.append((LLMProviderType.OPENROUTER, m))
+                models_to_try.append((LLMProviderType.OPENROUTER, m, None))
 
         last_error = None
-        for provider_override, current_model in models_to_try:
+        for provider_override, current_model, base_url_override in models_to_try:
             try:
-                model = self._get_langchain_model(current_model, provider_override=provider_override)
+                model = self._get_langchain_model(
+                    current_model,
+                    provider_override=provider_override,
+                    base_url_override=base_url_override,
+                )
                 if model is None:
                     continue
 
