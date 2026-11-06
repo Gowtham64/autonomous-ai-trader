@@ -16,6 +16,7 @@ from guardian.models import (
 )
 from market.calendar import IndianMarketCalendar
 from orchestration.event_bus import SystemEventType, realtime_event_bus
+from risk.profit_math import LOCK_PROFIT_PCT, exit_adds_capital
 
 
 class PositionGuardianWorker:
@@ -160,7 +161,13 @@ class PositionGuardianWorker:
             return GuardianAction.HARD_STOP_EXIT, reason
 
         # 2. TARGET 1 PROFIT PROTECTION
+        # A touch of the target is not a win unless the fill still adds cash after fees.
         tgt_achieved = (current_ltp <= self.state.target_1) if is_short else (current_ltp >= self.state.target_1)
+        if tgt_achieved and not self._exit_compounds(current_ltp, is_short, mult):
+            tgt_achieved = False
+            logger.info(
+                f"[Guardian] {self.state.symbol} reached the target price, but the exit does not clear fees. Holding."
+            )
         if tgt_achieved:
             self.interventions_count += 1
             reason = f"Profit Target 1 achieved at {curr_sym}{current_ltp:.4f} (Target: {curr_sym}{self.state.target_1:.4f})"
@@ -181,6 +188,8 @@ class PositionGuardianWorker:
                 highest_price_seen=self.state.highest_price_seen,
                 require_closed_candle=True,
             )
+            if should_exit and not self._exit_compounds(current_ltp, is_short, mult):
+                should_exit = False
             if should_exit:
                 self.interventions_count += 1
                 logger.info(f"🎯 [Guardian Chart Profit-Take] {self.state.symbol}: {chart_reason}")
@@ -252,7 +261,7 @@ class PositionGuardianWorker:
 
             # Rule 3C: All-Day Dynamic Performance Harvest (Active 24/7 across all market sessions and crypto)
             # If position made a substantial peak gain (>= +0.60%) and has pulled back by >= 0.25%, lock gains!
-            if peak_gain_pct >= 0.60 and pullback_from_peak_pct >= 0.25:
+            if peak_gain_pct >= 0.60 and pullback_from_peak_pct >= 0.25 and self._exit_compounds(current_ltp, is_short, mult):
                 self.interventions_count += 1
                 reason = (
                     f"Performance Exit: Position peaked at {curr_sym}{self.state.highest_price_seen:.4f if is_crypto else self.state.highest_price_seen:.2f} (+{peak_gain_pct:.2f}%) "
@@ -318,11 +327,12 @@ class PositionGuardianWorker:
                 return GuardianAction.STAGNATION_SCRATCH_EXIT, reason
 
         # 5. 24/7 CRYPTO STAGNATION DEFENSE
-        # When a crypto perpetual trade has been open for > 90 minutes without reaching targets,
-        # and remains negative/stagnant (pnl < 0), scratch it to free up margin for active momentum movers.
+        # A small red mark is normal. Closing it after 90 minutes books the fee and
+        # stops the winner from ever paying the account. Scratch only a real loser
+        # that has sat for 6 hours without hitting its stop.
         if is_crypto:
             duration_minutes = (datetime.now(UTC) - self.state.opened_at).total_seconds() / 60.0
-            if duration_minutes >= 90.0 and pnl < 0:
+            if duration_minutes >= 360.0 and pnl_pct <= -1.0:
                 self.interventions_count += 1
                 reason = (
                     f"Crypto Stagnation Scratch: Position held for {int(duration_minutes)}m in negative territory "
@@ -334,7 +344,7 @@ class PositionGuardianWorker:
 
         # 7. MULTI-TIERED HIGH-WATER MARK PROFIT RATCHET & TIGHT TRAILING STOP
         # Ensures winning trades NEVER turn into losses:
-        # Tier 1 (+0.50% Peak): Lock Break-Even + 0.15% (costs covered)
+        # Tier 1 (+0.50% Peak): Lock +0.30% so the trailed stop still pays after fees
         # Tier 2 (+1.00% Peak): Lock at least +0.60% profit (or keep >=60% of peak gain)
         # Tier 3 (+1.50% Peak): Lock at least +1.00% profit
         # Tier 4 (+2.00% Peak): Lock at least +1.50% profit
@@ -360,7 +370,7 @@ class PositionGuardianWorker:
                 giveback_sl = round(self.state.entry_price - (peak_drop * 0.60), px_decimals)
                 target_sl = min(target_sl, tier_sl, giveback_sl)
             elif peak_gain_pct >= 0.50:
-                tier_sl = round(self.state.entry_price * 0.9985, px_decimals)
+                tier_sl = round(self.state.entry_price * (1.0 - LOCK_PROFIT_PCT), px_decimals)
                 target_sl = min(target_sl, tier_sl)
 
             if profit_points >= (effective_atr * 0.8):
@@ -384,7 +394,7 @@ class PositionGuardianWorker:
                 giveback_sl = round(self.state.entry_price + ((self.state.highest_price_seen - self.state.entry_price) * 0.60), px_decimals)
                 target_sl = max(target_sl, tier_sl, giveback_sl)
             elif peak_gain_pct >= 0.50:
-                tier_sl = round(self.state.entry_price * 1.0015, px_decimals)
+                tier_sl = round(self.state.entry_price * (1.0 + LOCK_PROFIT_PCT), px_decimals)
                 target_sl = max(target_sl, tier_sl)
 
             # Dynamic Trailing Stop using calibrated ATR
@@ -413,6 +423,15 @@ class PositionGuardianWorker:
             logger.warning(f"⚠️ [Guardian Thesis Invalidation] {self.state.symbol}: {self.state.invalidation_reason}")
 
         return GuardianAction.HOLD, "Position within approved safety boundaries"
+
+    def _exit_compounds(self, exit_mark: float, is_short: bool, multiplier: float) -> bool:
+        return exit_adds_capital(
+            entry=self.state.entry_price,
+            exit_mark=exit_mark,
+            quantity=self.state.quantity,
+            multiplier=multiplier,
+            is_short=is_short,
+        )
 
     def _publish_guardian_alert(self, action: GuardianAction, reason: str):
         realtime_event_bus.publish_event(

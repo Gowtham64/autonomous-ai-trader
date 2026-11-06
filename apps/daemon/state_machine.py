@@ -80,7 +80,13 @@ class AutonomousTradingDaemon:
                 avail_margin = float(funds.get("available_margin", 0.0))
                 if real_cap > 0 or avail_margin > 0:
                     treasury.current_capital = real_cap
-                    treasury.starting_capital = real_cap
+                    # Keep the original stake. Resetting it to today's cash hides profit
+                    # and moves the survival line every cycle, so wins never compound.
+                    start_cap = float(funds.get("starting_capital") or 0.0)
+                    if start_cap <= 0:
+                        start_cap = float(getattr(self.broker, "initial_capital", 0.0) or 0.0)
+                    if start_cap > 0:
+                        treasury.starting_capital = start_cap
                     treasury.buckets.trading_capital = avail_margin
                     self.total_capital = real_cap
                     self.risk_engine.total_equity = real_cap

@@ -140,6 +140,7 @@ class DeltaPaperBroker(BaseBroker):
             "used_margin": round(self.used_margin, 4),
             "unrealized_pnl": unrealized,
             "mark_to_market_equity": mtm_equity,
+            "starting_capital": round(self.initial_capital, 4),
         }
 
     async def get_positions(self, force: bool = False) -> list[PositionSnapshot]:
