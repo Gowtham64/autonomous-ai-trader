@@ -136,6 +136,22 @@ async def update_real_quotes_task():
                     if any(item.get("source") == "delta" for item in _live_quotes_cache):
                         global _quotes_updated_at
                         _quotes_updated_at = datetime.now(UTC)
+                    broker = await get_active_broker()
+                    if hasattr(broker, "update_mark_prices"):
+                        open_positions = await broker.get_positions()
+                        marks = {}
+                        for pos in open_positions:
+                            sym = getattr(pos, "symbol", None) or (pos.get("symbol") if isinstance(pos, dict) else None)
+                            ticker = ticker_map.get(sym) if sym else None
+                            if ticker is None and sym:
+                                ticker = ticker_map.get(str(sym).replace("USDT", "USD"))
+                            if not ticker:
+                                continue
+                            mark = float(ticker.get("mark_price") or ticker.get("close") or 0.0)
+                            if mark > 0 and sym:
+                                marks[sym] = mark
+                        if marks:
+                            broker.update_mark_prices(marks)
         except Exception as e:
             logger.debug(f"[MarketFeed] Real quote refresh note: {e}")
         await asyncio.sleep(2.0)

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=4.0.0">
+  <link rel="stylesheet" href="/static/style.css?v=4.3.0">
   <script src="/static/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
@@ -89,6 +89,16 @@
         </div>
         <div class="kpi-value" id="kpiUnrealizedPnl">$0.00</div>
         <div class="kpi-subtext" id="kpiMarkPriceFreshness">Mark-to-market live</div>
+      </div>
+
+      <!-- 5. Active trades -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-label">Active Trades</span>
+          <span class="kpi-icon text-cyan" id="kpiActiveStatus">Flat</span>
+        </div>
+        <div class="kpi-value" id="kpiActiveCount">0</div>
+        <div class="kpi-subtext" id="kpiActivePnl">$0.00 open</div>
       </div>
 
       <!-- 5. Win Rate -->
@@ -840,6 +850,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=4.2.0"></script>
+  <script src="/static/app.js?v=4.3.0"></script>
 </body>
 </html>

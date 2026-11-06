@@ -478,6 +478,21 @@ async function fetchPerformanceMetrics() {
   }
 }
 
+function paintActiveTrades(positions) {
+  const countEl = document.getElementById('kpiActiveCount');
+  const pnlEl = document.getElementById('kpiActivePnl');
+  const statusEl = document.getElementById('kpiActiveStatus');
+  if (!countEl || !pnlEl || !statusEl) return;
+  const count = positions.length;
+  const openPnl = positions.reduce((sum, p) => sum + Number(p.unrealized_pnl || 0), 0);
+  const digits = Math.abs(openPnl) >= 1 ? 2 : 4;
+  countEl.innerText = String(count);
+  pnlEl.innerText = `${openPnl >= 0 ? '+' : ''}$${openPnl.toFixed(digits)} open`;
+  pnlEl.className = openPnl >= 0 ? 'kpi-subtext text-green' : 'kpi-subtext text-red';
+  statusEl.innerText = count > 0 ? 'Open' : 'Flat';
+  statusEl.className = count > 0 ? 'kpi-icon text-green' : 'kpi-icon text-dim';
+}
+
 // 7. Real Positions, Open Orders, and Completed Trades Blotter
 async function fetchPositionsAndOrders() {
   try {
@@ -486,6 +501,7 @@ async function fetchPositionsAndOrders() {
       const data = await posRes.json();
       const positions = data.positions || [];
       document.getElementById('countActivePos').innerText = positions.length;
+      paintActiveTrades(positions);
 
       const tbody = document.getElementById('positionsTableBody');
       if (positions.length === 0) {
