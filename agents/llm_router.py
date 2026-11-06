@@ -95,7 +95,7 @@ class LLMRouter:
                 base_url=f"{settings.OLLAMA_BASE_URL}/v1",
                 api_key="ollama",
                 temperature=0.2,
-                request_timeout=6.0,
+                request_timeout=3.0,
                 model_kwargs={"response_format": {"type": "json_object"}},
                 extra_body={"keep_alive": -1},
             )
@@ -273,14 +273,25 @@ class LLMRouter:
             {"role": "user", "content": user_prompt},
         ]
 
-        # Build model list in strict priority order: Groq -> Gemini -> OpenRouter -> Quant Fallback
+        # Build model list in strict priority order: 1. Ollama -> 2. Groq -> 3. Gemini -> 4. OpenRouter -> 5. Quant Fallback
         models_to_try: list[tuple[LLMProviderType, str]] = []
+
+        # 1. Ollama first (Local/Private LLM)
+        if settings.OLLAMA_BASE_URL:
+            models_to_try.append((LLMProviderType.OLLAMA, "llama3.2:1b"))
+            models_to_try.append((LLMProviderType.OLLAMA, "qwen2.5:1.5b"))
+
+        # 2. Groq second (High-speed cloud LPU)
         if settings.GROQ_API_KEY:
             for m in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
                 models_to_try.append((LLMProviderType.GROQ, m))
+
+        # 3. Gemini third (Google cloud multimodal)
         if settings.GEMINI_API_KEY:
             for m in ["gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]:
                 models_to_try.append((LLMProviderType.GEMINI, m))
+
+        # 4. OpenRouter fourth
         if settings.OPENROUTER_API_KEY:
             pool = await self._get_next_model_pool(model_name)
             for m in pool[:2]:
