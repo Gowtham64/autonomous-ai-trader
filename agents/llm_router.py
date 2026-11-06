@@ -294,10 +294,11 @@ class LLMRouter:
 
         # 1. Ollama (Priority #1 if MacBook is awake and registered)
         if is_mac_live and mac_tunnel_url:
-            models_to_try.append((LLMProviderType.OLLAMA, "llama3.2:1b", mac_tunnel_url))
-            models_to_try.append((LLMProviderType.OLLAMA, "qwen2.5:1.5b", mac_tunnel_url))
+            for m in ["qwen3:latest", "qwen3.5:2b", "llama3.2:1b"]:
+                models_to_try.append((LLMProviderType.OLLAMA, m, mac_tunnel_url))
         elif settings.OLLAMA_BASE_URL and settings.OLLAMA_BASE_URL != "http://localhost:11434":
-            models_to_try.append((LLMProviderType.OLLAMA, "llama3.2:1b", settings.OLLAMA_BASE_URL))
+            for m in ["qwen3:latest", "qwen3.5:2b", "llama3.2:1b"]:
+                models_to_try.append((LLMProviderType.OLLAMA, m, settings.OLLAMA_BASE_URL))
 
         # 2. Groq second (High-speed cloud LPU when MacBook off or exhausted)
         if settings.GROQ_API_KEY:

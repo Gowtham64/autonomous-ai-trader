@@ -66,18 +66,21 @@ def ensure_cloudflared() -> str:
     return CLOUDFLARED_BIN
 
 
-def register_with_render(tunnel_url: str) -> bool:
+def register_with_render(tunnel_url: str) -> tuple[bool, bool]:
     try:
         req = urllib.request.Request(
             f"{RENDER_API}/api/ollama/register",
             data=json.dumps({"url": tunnel_url}).encode(),
             headers={"Content-Type": "application/json", "User-Agent": "MacBookAutoBridge/1.0"},
         )
-        with urllib.request.urlopen(req, timeout=5) as res:
-            return res.status == 200
+        with urllib.request.urlopen(req, timeout=8) as res:
+            if res.status == 200:
+                body = json.loads(res.read().decode())
+                return True, body.get("verified", False)
+            return False, False
     except Exception as e:
         print(f"⚠️ [Bridge] Heartbeat notice: {e}")
-        return False
+        return False, False
 
 
 def main():
@@ -96,7 +99,7 @@ def main():
 
     print("🌐 Launching secure zero-config tunnel to MacBook...")
     proc = subprocess.Popen(
-        [cf_binary, "tunnel", "--url", "http://127.0.0.1:11434"],
+        [cf_binary, "tunnel", "--url", "http://127.0.0.1:11434", "--http-host-header", "localhost:11434"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -118,9 +121,11 @@ def main():
     print(f"🚀 Bridge Live: {tunnel_url}")
     print(f"📡 Registering with Render Cloud Trader ({RENDER_API})...")
 
-    initial_ok = register_with_render(tunnel_url)
-    if initial_ok:
-        print("🟢 SUCCESS: Cloud Trader is now routing Priority #1 to your MacBook Ollama!")
+    initial_ok, is_verified = register_with_render(tunnel_url)
+    if is_verified:
+        print("🟢 SUCCESS: Cloud Trader verified and is now routing Priority #1 to your MacBook Ollama!")
+    elif initial_ok:
+        print("🟡 Tunnel registered with Cloud Trader. Awaiting active verification probe...")
     else:
         print("⚠️ Warning: Initial registration to cloud trader failed. Will keep retrying...")
 
@@ -131,9 +136,9 @@ def main():
     try:
         while True:
             time.sleep(30)
-            ok = register_with_render(tunnel_url)
-            status_str = "OK" if ok else "RETRYING"
-            print(f"💓 [{time.strftime('%H:%M:%S')}] Heartbeat {status_str} — MacBook Ollama Connected.")
+            ok, verified = register_with_render(tunnel_url)
+            status_str = "ACTIVE (Ollama Priority #1)" if verified else ("CONNECTING" if ok else "RETRYING")
+            print(f"💓 [{time.strftime('%H:%M:%S')}] Heartbeat — {status_str}")
     except KeyboardInterrupt:
         print("\n🛑 Stopping bridge. Cloud trader will switch to Groq & Gemini.")
         proc.kill()
