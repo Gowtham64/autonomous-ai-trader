@@ -963,6 +963,10 @@ async function fetchEvaluationStatus() {
       document.getElementById('evalElapsed').innerText = `${data.elapsed_formatted} (of ${data.target_formatted})`;
       document.getElementById('evalStart').innerText = data.start_time;
       document.getElementById('evalEnd').innerText = data.target_end_time;
+      const decisionEl = document.getElementById('evalLiveDecision');
+      if (decisionEl) {
+        decisionEl.innerText = data.live_decision_detail || data.live_decision || 'Paper only';
+      }
       document.getElementById('evalProgressBar').style.width = `${data.progress_pct}%`;
       document.getElementById('evalProgressLabel').innerText = `${data.progress_pct}% complete`;
 

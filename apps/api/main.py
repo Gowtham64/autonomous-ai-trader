@@ -221,6 +221,34 @@ async def live_agent_evaluation_daemon_task():
                         "live_trading_enabled": bool(settings.LIVE_TRADING_ENABLED),
                         "btc_mark": btc_mark,
                     }, f, indent=2)
+                window_file = root / "data" / "go_live_window.json"
+                window: dict[str, Any] = {}
+                if window_file.exists():
+                    try:
+                        with open(window_file, "r", encoding="utf-8") as f:
+                            window = json.load(f)
+                    except Exception:
+                        window = {}
+                window_started = window.get("started_at") or now_utc.isoformat()
+                interruptions = int(window.get("interruptions") or 0)
+                previous = window.get("last_heartbeat")
+                if previous:
+                    try:
+                        gap = (now_utc - datetime.fromisoformat(str(previous))).total_seconds()
+                        if gap > 900:
+                            interruptions += 1
+                            window["last_gap_seconds"] = round(gap, 1)
+                    except ValueError:
+                        pass
+                window.update({
+                    "started_at": window_started,
+                    "last_heartbeat": now_utc.isoformat(),
+                    "interruptions": interruptions,
+                    "target_hours": 72,
+                    "live_trading_enabled": False,
+                })
+                with open(window_file, "w", encoding="utf-8") as f:
+                    json.dump(window, f, indent=2)
             except Exception as e:
                 logger.debug(f"Heartbeat update note: {e}")
 
@@ -1096,15 +1124,52 @@ async def get_evaluation_status():
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent
 
-    hb_file = root / "data" / "live_session_heartbeat.json"
-    hb = {}
-    if hb_file.exists():
-        try:
-            with open(hb_file, "r", encoding="utf-8") as f:
-                hb = json.load(f)
-        except Exception:
-            pass
+    broker = await get_active_broker()
+    funds = await broker.get_funds()
+    display_starting_capital = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
+    display_equity = funds.get("mark_to_market_equity", funds.get("total_capital", display_starting_capital))
 
+    live_trades = await get_unified_trade_history(include_historical_ledgers=False)
+    window_file = root / "data" / "go_live_window.json"
+    window = {}
+    if window_file.exists():
+        try:
+            with open(window_file, "r", encoding="utf-8") as f:
+                window = json.load(f)
+        except Exception:
+            window = {}
+
+    from risk.go_live_gate import score_go_live
+    now_utc = datetime.now(UTC)
+    started_raw = window.get("started_at")
+    start_dt = None
+    if started_raw:
+        try:
+            start_dt = datetime.fromisoformat(str(started_raw))
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=UTC)
+        except ValueError:
+            start_dt = None
+    drawdown_pct = 0.0
+    if display_starting_capital > 0 and display_equity is not None:
+        drawdown_pct = round(max(0.0, (display_starting_capital - float(display_equity)) / display_starting_capital) * 100, 2)
+    gate = score_go_live(
+        now=now_utc,
+        started_at=start_dt,
+        trades=live_trades,
+        drawdown_pct=drawdown_pct,
+        interruptions=int(window.get("interruptions") or 0),
+        live_trading_enabled=bool(settings.LIVE_TRADING_ENABLED),
+    )
+    target_hours = 72.0
+    elapsed_secs = gate["elapsed_seconds"]
+    completed_hours = elapsed_secs / 3600.0
+    progress_pct = min(100.0, max(0.0, round((completed_hours / target_hours) * 100.0, 2)))
+    if start_dt is None:
+        start_dt = now_utc
+    target_end_dt = start_dt + timedelta(hours=target_hours)
+    daily_limit = settings.MAX_DAILY_LOSS_PCT * 100
+    drawdown_limit = settings.MAX_PORTFOLIO_DRAWDOWN_PCT * 100
     drisk_file = root / "data" / "daily_risk_state.json"
     drisk = {}
     if drisk_file.exists():
@@ -1113,67 +1178,16 @@ async def get_evaluation_status():
                 drisk = json.load(f)
         except Exception:
             pass
-
-    telem_file = root / "data" / "paper_7day_telemetry.json"
-    telem = {}
-    if telem_file.exists():
-        try:
-            with open(telem_file, "r") as f:
-                telem = json.load(f)
-        except Exception:
-            pass
-
-    broker = await get_active_broker()
-    funds = await broker.get_funds()
-    display_starting_capital = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
-    display_equity = funds.get("total_capital", display_starting_capital)
-
-    live_trades = await get_unified_trade_history(include_historical_ledgers=False)
-    today_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
-    today_trades = [t for t in live_trades if (t.get("timestamp") or "").startswith(today_prefix)]
-    live_trades_count = len(today_trades)
-    winning_trades = sum(1 for t in today_trades if (t.get("net_pnl") or 0.0) > 0)
-    win_rate = round((winning_trades / max(1, live_trades_count)) * 100, 1) if live_trades_count > 0 else 0.0
-
-    target_hours = 72.0  # 3-Day Go-Live Evaluation window
-    now_utc = datetime.now(UTC)
-    elapsed_secs = 0.0
-    started_raw = hb.get("started_at")
-    last_raw = hb.get("last_heartbeat")
-    session_fresh = False
-    if started_raw and last_raw:
-        try:
-            last_dt = datetime.fromisoformat(str(last_raw))
-            start_dt_parsed = datetime.fromisoformat(str(started_raw))
-            if (now_utc - last_dt).total_seconds() <= 180:
-                elapsed_secs = max(0.0, (now_utc - start_dt_parsed).total_seconds())
-                session_fresh = True
-        except ValueError:
-            session_fresh = False
-    completed_hours = elapsed_secs / 3600.0
-    progress_pct = round((completed_hours / target_hours) * 100.0, 2) if target_hours > 0 else 0.0
-    progress_pct = min(100.0, max(0.0, progress_pct))
-
-    start_dt = now_utc - timedelta(seconds=elapsed_secs)
-    target_end_dt = start_dt + timedelta(hours=target_hours)
-    start_str = start_dt.strftime("%b %d, %Y %H:%M UTC")
-    end_str = target_end_dt.strftime("%b %d, %Y %H:%M UTC")
-
-    phase_title = "3-Day Paper Evaluation (Go-Live Gate)"
-    session_status = "RUNNING" if session_fresh else "IDLE"
-    drawdown_pct = 0.0
-    if display_starting_capital > 0 and display_equity is not None:
-        drawdown_pct = round(max(0.0, (display_starting_capital - float(display_equity)) / display_starting_capital) * 100, 2)
     daily_loss_pct = round((drisk.get("accumulated_loss", 0.0) / max(drisk.get("day_start_equity", display_starting_capital), 1.0)) * 100, 2)
-    drawdown_limit = settings.MAX_PORTFOLIO_DRAWDOWN_PCT * 100
-    daily_limit = settings.MAX_DAILY_LOSS_PCT * 100
+    trade_status = "PENDING" if gate["closed_trades"] == 0 else "OBSERVED"
+    pf_status = "PENDING" if gate["closed_trades"] < 20 else ("PASS" if gate["checks"]["profit_factor"] else "FAIL")
 
     return {
-        "evaluation_id": phase_title,
-        "phase": phase_title,
-        "status": session_status,
-        "start_time": start_str,
-        "target_end_time": end_str,
+        "evaluation_id": "3-Day Paper Evaluation (Go-Live Gate)",
+        "phase": "3-Day Paper Evaluation (Go-Live Gate)",
+        "status": "RUNNING" if started_raw else "WAITING",
+        "start_time": start_dt.strftime("%b %d, %Y %H:%M UTC"),
+        "target_end_time": target_end_dt.strftime("%b %d, %Y %H:%M UTC"),
         "elapsed_seconds": elapsed_secs,
         "elapsed_formatted": f"{int(completed_hours // 24)}d {int(completed_hours % 24):02d}h {int((elapsed_secs % 3600) // 60):02d}m",
         "target_formatted": "3d 00h",
@@ -1183,21 +1197,27 @@ async def get_evaluation_status():
         "starting_capital": display_starting_capital,
         "current_equity": display_equity,
         "drawdown_pct": drawdown_pct,
-        "total_trades": live_trades_count,
+        "total_trades": gate["closed_trades"],
         "daily_loss_realized_pct": daily_loss_pct,
         "daily_loss_limit_pct": daily_limit,
         "max_drawdown_limit_pct": drawdown_limit,
+        "live_decision": gate["decision"],
+        "live_decision_detail": gate["detail"],
+        "live_trading_enabled": False,
         "acceptance_criteria": [
-            {"criterion": "Completed round trips", "target": "Observed from today's closed trades", "status": "PENDING" if live_trades_count == 0 else "OBSERVED"},
-            {"criterion": "Profit Factor", "target": "Profit factor ≥ 1.60", "status": "PENDING"},
-            {"criterion": "Maximum Drawdown", "target": f"Max drawdown ≤ {drawdown_limit:.2f}%", "status": "PASS" if drawdown_pct <= drawdown_limit else "FAIL"},
+            {"criterion": "Completed round trips", "target": "20 closed paper trades in this window", "status": trade_status},
+            {"criterion": "Profit Factor", "target": "Profit factor ≥ 1.60", "status": pf_status},
+            {"criterion": "Maximum Drawdown", "target": "Max drawdown < 4.5%", "status": "PASS" if gate["checks"]["drawdown"] else "FAIL"},
             {"criterion": "Daily Loss Breaches", "target": f"Daily loss ≤ {daily_limit:.2f}%", "status": "PASS" if daily_loss_pct <= daily_limit else "FAIL"},
-            {"criterion": "System Stability", "target": "Zero crashes / clean recovery", "status": "PENDING"},
+            {"criterion": "System Stability", "target": "72 hours without a gap over 15 minutes", "status": "PENDING"},
+            {"criterion": "Live trading switch", "target": "Stays off until a person turns it on after review", "status": "PASS" if not settings.LIVE_TRADING_ENABLED else "FAIL"},
         ],
         "telemetry_metrics": {
-            "trades_closed": live_trades_count,
-            "win_rate": win_rate,
+            "trades_closed": gate["closed_trades"],
+            "win_rate": gate["win_rate"],
+            "profit_factor": gate["profit_factor"],
             "current_equity": display_equity,
+            "interruptions": int(window.get("interruptions") or 0),
         },
     }
 
