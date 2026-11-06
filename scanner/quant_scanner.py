@@ -138,25 +138,56 @@ class QuantMarketScanner:
         self._rotation_index = 0
 
     @staticmethod
-    async def get_live_delta_perpetuals(min_turnover_usd: float = 25000.0) -> list[str]:
-        """Dynamically fetches all active, liquid perpetual contracts directly from Delta Exchange API."""
+    async def get_live_delta_perpetuals(
+        min_turnover_usd: float = 10000.0,
+        available_capital: float | None = None,
+        max_symbols: int = 40,
+    ) -> list[str]:
+        """Dynamically fetches active liquid perpetual contracts directly from Delta Exchange API,
+        filtered by account capital affordability and ranked by 24h market turnover.
+        """
         try:
+            from portfolio.position_sizer import get_delta_contract_multiplier
+            from core.config.settings import settings
+            crypto_lev = getattr(settings, "DELTA_MAX_LEVERAGE", 5.0)
+
             import httpx
             async with httpx.AsyncClient(timeout=6.0) as client:
                 r = await client.get("https://api.india.delta.exchange/v2/tickers")
                 if r.status_code == 200:
                     data = r.json().get("result", [])
-                    perps = [
+                    operational = [
                         t for t in data
                         if t.get("contract_type") == "perpetual_futures"
                         and t.get("product_trading_status") == "operational"
                         and float(t.get("turnover_usd") or 0.0) >= min_turnover_usd
                     ]
+                    
+                    # Filter dynamically based on account capital (select all affordable crypto from entire market)
+                    if available_capital is not None and available_capital > 0:
+                        max_unit_margin = min(available_capital * 0.45, available_capital - 0.50) if available_capital < 25.0 else available_capital
+                        eligible = []
+                        for t in operational:
+                            sym = t.get("symbol", "")
+                            mark_price = float(t.get("mark_price") or t.get("close") or 0.0)
+                            if mark_price <= 0:
+                                continue
+                            raw_mult = get_delta_contract_multiplier(sym)
+                            mult = raw_mult if (raw_mult is not None and raw_mult > 0) else 1.0
+                            unit_margin = (mark_price * mult) / crypto_lev
+                            if 0 < unit_margin <= max_unit_margin:
+                                eligible.append(t)
+                        if eligible:
+                            operational = eligible
+
                     # Sort by 24h turnover descending so highest liquidity is scanned first
-                    perps.sort(key=lambda t: float(t.get("turnover_usd") or 0.0), reverse=True)
-                    symbols = [t["symbol"] for t in perps]
+                    operational.sort(key=lambda t: float(t.get("turnover_usd") or 0.0), reverse=True)
+                    symbols = [t["symbol"] for t in operational[:max_symbols]]
                     if symbols:
-                        logger.info(f"⚡ [Delta Dynamic Scanner] Loaded all {len(symbols)} active liquid perpetuals from Delta Exchange")
+                        logger.info(
+                            f"⚡ [Delta Complete Market Scanner] Evaluated full exchange ({len(data)} markets) -> "
+                            f"Selected {len(symbols)} liquid, affordable perpetuals for capital (${available_capital or 0.0:.2f})"
+                        )
                         return symbols
         except Exception as e:
             logger.debug(f"Error fetching live Delta tickers: {e}")
@@ -333,13 +364,14 @@ class QuantMarketScanner:
     async def scan_all_candidates(
         self,
         symbols: list[str] | None = None,
+        available_capital: float | None = None,
     ) -> list[CandidateSignal]:
-        """Scans all N stocks in parallel using bounded concurrency."""
+        """Scans all stocks/cryptos in parallel using bounded concurrency."""
         target_symbols = symbols or self.universe
 
-        # If scanning crypto, dynamically pull ALL operational perpetuals on Delta Exchange!
+        # If scanning crypto, dynamically pull ALL operational perpetuals on Delta Exchange filtered by capital!
         if not symbols and (self.universe_name in ["crypto", "delta", "delta_crypto"] or (self.universe and self.universe[0].endswith("USD"))):
-            live_symbols = await self.get_live_delta_perpetuals()
+            live_symbols = await self.get_live_delta_perpetuals(available_capital=available_capital)
             if live_symbols:
                 target_symbols = live_symbols
 
@@ -371,8 +403,9 @@ class QuantMarketScanner:
         top_n: int = 10,
         symbols: list[str] | None = None,
         max_price: float | None = None,
+        available_capital: float | None = None,
     ) -> list[CandidateSignal]:
-        candidates = await self.scan_all_candidates(symbols=symbols)
+        candidates = await self.scan_all_candidates(symbols=symbols, available_capital=available_capital)
         if max_price is not None and max_price > 0:
             candidates = [c for c in candidates if c.ltp <= max_price]
 

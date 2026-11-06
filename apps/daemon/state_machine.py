@@ -215,41 +215,18 @@ class AutonomousTradingDaemon:
             "realized_pnl": round(treasury.realized_pnl, 2),
         }
 
-        # 1. State: SCANNING Universe of N Stocks
+        # 1. State: SCANNING Complete Universe of Stocks/Cryptos
         self.current_state = TradingSessionState.SCANNING
-        candidates = await self.scanner.get_top_candidates(top_n=n_candidates)
-        # If running on bootstrap margin, ensure we also include actionable stocks whose LTP is within margin
+        candidates = await self.scanner.get_top_candidates(
+            top_n=n_candidates,
+            available_capital=available_margin,
+        )
+        # If running on bootstrap margin for equities, ensure we also include actionable stocks whose LTP is within margin
         if not is_crypto and available_margin > 0 and available_margin < 2000 and not any(c.ltp <= available_margin for c in candidates):
             affordable_candidates = await self.scanner.get_top_candidates(top_n=3, max_price=available_margin)
             if affordable_candidates:
                 candidates = affordable_candidates + [c for c in candidates if c.symbol not in {a.symbol for a in affordable_candidates}]
                 candidates = candidates[:n_candidates]
-
-        # For micro crypto accounts (< $25), ensure candidates include actionable contracts that fit margin safely
-        if is_crypto and available_margin > 0 and available_margin < 25.0:
-            from portfolio.position_sizer import get_delta_contract_multiplier
-            crypto_lev = getattr(settings, "DELTA_MAX_LEVERAGE", 5.0)
-            max_unit_margin = available_margin * 0.40  # e.g., max $2.40 margin per contract on $6 account
-            affordable_crypto = []
-            for c in candidates:
-                raw_mult = get_delta_contract_multiplier(c.symbol) or 1.0
-                unit_margin = (c.ltp * raw_mult) / crypto_lev
-                if unit_margin <= max_unit_margin:
-                    affordable_crypto.append(c)
-
-            # If top candidates are too expensive (BTC/ETH/SOL), scan the bootstrap micro universe
-            if len(affordable_crypto) < n_candidates:
-                from scanner.quant_scanner import DELTA_CRYPTO_BOOTSTRAP_UNIVERSE
-                bootstrap_cands = await self.scanner.scan_all_candidates(symbols=DELTA_CRYPTO_BOOTSTRAP_UNIVERSE)
-                for bc in bootstrap_cands:
-                    if bc.symbol not in {a.symbol for a in affordable_crypto}:
-                        raw_mult = get_delta_contract_multiplier(bc.symbol) or 1.0
-                        unit_margin = (bc.ltp * raw_mult) / crypto_lev
-                        if unit_margin <= max_unit_margin:
-                            affordable_crypto.append(bc)
-
-            if affordable_crypto:
-                candidates = affordable_crypto[:n_candidates]
 
         cycle_summary["candidates_scanned"] = len(candidates)
         logger.info(f"Scanner qualified {len(candidates)} candidates from universe: {[c.symbol for c in candidates]}")
