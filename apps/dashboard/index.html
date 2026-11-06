@@ -45,6 +45,7 @@
         <div class="clock-display" id="utcClock">
           --:--:-- UTC
         </div>
+        <button type="button" class="nav-tab" id="signOutBtn">Sign out</button>
       </div>
     </header>
 
@@ -192,11 +193,11 @@
               </div>
               <div class="eval-metric-row">
                 <span class="eval-label">Start:</span>
-                <span class="eval-val" id="evalStart">Nov 6, 2026 18:00 UTC</span>
+                <span class="eval-val" id="evalStart">—</span>
               </div>
               <div class="eval-metric-row">
                 <span class="eval-label">End (target):</span>
-                <span class="eval-val" id="evalEnd">Nov 20, 2026 18:00 UTC</span>
+                <span class="eval-val" id="evalEnd">—</span>
               </div>
               <div class="progress-track">
                 <div class="progress-fill" id="evalProgressBar" style="width: 0.75%;"></div>
@@ -225,23 +226,23 @@
           <div class="ticker-pills-bar" id="tickerPillsBar">
             <div class="ticker-pill active" data-symbol="BTCUSDT">
               <span>₿ BTCUSDT</span>
-              <span class="text-green">+0.42%</span>
+              <span class="text-dim" id="pillChangeBTC">—</span>
             </div>
             <div class="ticker-pill" data-symbol="ETHUSDT">
               <span>Ξ ETHUSDT</span>
-              <span class="text-green">+0.56%</span>
+              <span class="text-dim" id="pillChangeETH">—</span>
             </div>
             <div class="ticker-pill" data-symbol="SOLUSDT">
               <span>◎ SOLUSDT</span>
-              <span class="text-green">+1.21%</span>
+              <span class="text-dim" id="pillChangeSOL">—</span>
             </div>
             <div class="ticker-pill" data-symbol="XRPUSDT">
               <span>✕ XRPUSDT</span>
-              <span class="text-red">-0.18%</span>
+              <span class="text-dim" id="pillChangeXRP">—</span>
             </div>
             <div class="ticker-pill" data-symbol="DOGEUSDT">
               <span>Ð DOGEUSDT</span>
-              <span class="text-green">+0.34%</span>
+              <span class="text-dim" id="pillChangeDOGE">—</span>
             </div>
           </div>
 
@@ -252,8 +253,8 @@
                 <div class="chart-symbol" id="chartSymbolDisplay">
                   <span style="color:#f59e0b;">₿</span> BTCUSDT
                 </div>
-                <div class="chart-price" id="chartLivePrice">67,420.50</div>
-                <div class="chart-change" id="chartLiveChange">+283.40 (+0.42%)</div>
+                <div class="chart-price" id="chartLivePrice">—</div>
+                <div class="chart-change" id="chartLiveChange">—</div>
               </div>
               <div class="chart-controls">
                 <div class="timeframe-group">
@@ -272,16 +273,16 @@
               <div class="legend-item">
                 <span class="legend-color" style="background:#06b6d4;"></span>
                 <span>EMA 20:</span>
-                <span class="text-cyan" id="legendEma20">67,285.14</span>
+                <span class="text-cyan" id="legendEma20">—</span>
               </div>
               <div class="legend-item">
                 <span class="legend-color" style="background:#a855f7;"></span>
                 <span>EMA 50:</span>
-                <span style="color:#a855f7;" id="legendEma50">67,102.67</span>
+                <span style="color:#a855f7;" id="legendEma50">—</span>
               </div>
               <div class="legend-item">
                 <span>ATR (14):</span>
-                <span class="text-muted" id="legendAtr14">184.20</span>
+                <span class="text-muted" id="legendAtr14">—</span>
               </div>
             </div>
 
@@ -423,33 +424,33 @@
               <tbody id="watchlistTableBody">
                 <tr data-symbol="BTCUSDT">
                   <td><span class="star-icon">★</span><strong>BTCUSDT</strong></td>
-                  <td id="watchPriceBTC">67,420.50</td>
-                  <td class="text-green" id="watchChangeBTC">+0.42%</td>
-                  <td class="text-dim">0.013%</td>
+                  <td id="watchPriceBTC">—</td>
+                  <td class="text-dim" id="watchChangeBTC">—</td>
+                  <td class="text-dim" id="watchSpreadBTC">—</td>
                 </tr>
                 <tr data-symbol="ETHUSDT">
                   <td><span class="star-icon">★</span><strong>ETHUSDT</strong></td>
-                  <td id="watchPriceETH">3,256.80</td>
-                  <td class="text-green" id="watchChangeETH">+0.56%</td>
-                  <td class="text-dim">0.018%</td>
+                  <td id="watchPriceETH">—</td>
+                  <td class="text-dim" id="watchChangeETH">—</td>
+                  <td class="text-dim" id="watchSpreadETH">—</td>
                 </tr>
                 <tr data-symbol="SOLUSDT">
                   <td><span class="star-icon">★</span><strong>SOLUSDT</strong></td>
-                  <td id="watchPriceSOL">186.24</td>
-                  <td class="text-green" id="watchChangeSOL">+1.21%</td>
-                  <td class="text-dim">0.027%</td>
+                  <td id="watchPriceSOL">—</td>
+                  <td class="text-dim" id="watchChangeSOL">—</td>
+                  <td class="text-dim" id="watchSpreadSOL">—</td>
                 </tr>
                 <tr data-symbol="XRPUSDT">
                   <td><span class="star-icon">★</span><strong>XRPUSDT</strong></td>
-                  <td id="watchPriceXRP">0.6328</td>
-                  <td class="text-red" id="watchChangeXRP">-0.18%</td>
-                  <td class="text-dim">0.031%</td>
+                  <td id="watchPriceXRP">—</td>
+                  <td class="text-dim" id="watchChangeXRP">—</td>
+                  <td class="text-dim" id="watchSpreadXRP">—</td>
                 </tr>
                 <tr data-symbol="DOGEUSDT">
                   <td><span class="star-icon">★</span><strong>DOGEUSDT</strong></td>
-                  <td id="watchPriceDOGE">0.08176</td>
-                  <td class="text-green" id="watchChangeDOGE">+0.34%</td>
-                  <td class="text-dim">0.036%</td>
+                  <td id="watchPriceDOGE">—</td>
+                  <td class="text-dim" id="watchChangeDOGE">—</td>
+                  <td class="text-dim" id="watchSpreadDOGE">—</td>
                 </tr>
               </tbody>
             </table>
@@ -463,7 +464,7 @@
             <div class="regime-body">
               <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span class="eval-label">Market Regime:</span>
-                <span class="regime-badge" id="regimeBadge">BULLISH_TREND</span>
+                <span class="regime-badge" id="regimeBadge">AWAITING DATA</span>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center;">
                 <span class="eval-label">Confidence:</span>
@@ -472,7 +473,7 @@
               <div class="regime-grid">
                 <div class="regime-stat">
                   <span class="regime-stat-lbl">Volatility (ATR14):</span>
-                  <span class="regime-stat-val" id="regimeVolatility">1.64%</span>
+                  <span class="regime-stat-val" id="regimeVolatility">—</span>
                 </div>
                 <div class="regime-stat">
                   <span class="regime-stat-lbl">Trend:</span>

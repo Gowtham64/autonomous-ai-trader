@@ -68,10 +68,16 @@ def ensure_cloudflared() -> str:
 
 def register_with_render(tunnel_url: str) -> tuple[bool, bool]:
     try:
+        token = os.environ.get("OLLAMA_BRIDGE_TOKEN", "").strip()
+        payload = {"url": tunnel_url}
+        headers = {"Content-Type": "application/json", "User-Agent": "MacBookAutoBridge/1.0"}
+        if token:
+            payload["token"] = token
+            headers["X-Bridge-Token"] = token
         req = urllib.request.Request(
             f"{RENDER_API}/api/ollama/register",
-            data=json.dumps({"url": tunnel_url}).encode(),
-            headers={"Content-Type": "application/json", "User-Agent": "MacBookAutoBridge/1.0"},
+            data=json.dumps(payload).encode(),
+            headers=headers,
         )
         with urllib.request.urlopen(req, timeout=8) as res:
             if res.status == 200:

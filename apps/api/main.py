@@ -9,9 +9,9 @@ except ImportError:
     UTC = timezone.utc
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from apps.api.office_service import ai_office_service
@@ -51,71 +51,23 @@ from execution.broker_factory import get_active_broker as get_configured_broker
 market_provider = YFinanceMarketDataProvider()
 background_api_tasks: set[asyncio.Task] = set()
 
-# Real live quotes cache populated from exchange
-_live_quotes_cache = [
-    {"symbol": "BTCUSDT", "ltp": 67420.50, "change": 0.42, "volume": 1425000000, "bid": 67418.00, "ask": 67421.50, "spread_pct": 0.013},
-    {"symbol": "ETHUSDT", "ltp": 3256.80, "change": 0.56, "volume": 850000000, "bid": 3256.40, "ask": 3257.00, "spread_pct": 0.018},
-    {"symbol": "SOLUSDT", "ltp": 186.24, "change": 1.21, "volume": 420000000, "bid": 186.20, "ask": 186.25, "spread_pct": 0.027},
-    {"symbol": "XRPUSDT", "ltp": 0.6328, "change": -0.18, "volume": 310000000, "bid": 0.6327, "ask": 0.6329, "spread_pct": 0.031},
-    {"symbol": "DOGEUSDT", "ltp": 0.08176, "change": 0.34, "volume": 190000000, "bid": 0.08175, "ask": 0.08177, "spread_pct": 0.036},
-    {"symbol": "NIFTY 50", "ltp": 23140.50, "change": 0.34, "volume": 242700},
-    {"symbol": "BANKNIFTY", "ltp": 55580.40, "change": 0.26, "volume": 145900},
-    {"symbol": "RELIANCE", "ltp": 1226.00, "change": 0.56, "volume": 13138735},
-    {"symbol": "SBIN", "ltp": 983.00, "change": 0.46, "volume": 3759097},
-    {"symbol": "TCS", "ltp": 2082.00, "change": -0.24, "volume": 3342195},
-]
+# Quotes are empty until the Delta ticker poll writes a real mark. No seeded prices.
+_live_quotes_cache: list[dict] = []
+_quotes_updated_at: datetime | None = None
+_position_count_cache: dict[str, float | int] = {"count": 0, "ts": 0.0}
+_cycle_lock = asyncio.Lock()
 
-# Real-time active agent action stream populated continuously by the autonomous daemon
+# Observed agent activity only. Status values describe monitoring, not fabricated approvals.
 _live_active_agent_actions: list[dict] = [
-    {
-        "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "agent": "Market Scanner Agent",
-        "role": "Scans markets & finds candidates",
-        "symbol": "BTCUSDT",
-        "action": "Scanning 5 Crypto Markets",
-        "status": "DETECTED",
-        "summary": "Active scanner monitoring BTC, ETH, SOL, XRP, DOGE order books. 20/50 EMA trend verified.",
-        "details": "Delta Exchange real-time tickers ingestion active. Spread < 0.05% filter verified.",
-    },
-    {
-        "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "agent": "Strategy Agent",
-        "role": "Evaluates strategies & regimes",
-        "symbol": "BTCUSDT",
-        "action": "Formulated Momentum Thesis",
-        "status": "APPROVED",
-        "summary": "Bullish momentum trajectory verified with Kronos Foundation Model. Target R:R 1.6:1.",
-        "details": "Confluence score 82%. Multi-factor alignment: Trend (Bullish), Volatility (Stable).",
-    },
-    {
-        "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "agent": "Risk Management Agent",
-        "role": "Enforces limits & position sizing",
-        "symbol": "BTCUSDT",
-        "action": "Enforced 14-Point Soundness Gate",
-        "status": "PASSED",
-        "summary": "14-Point Pre-Trade Gate PASSED. SL & TP brackets anchored. Max drawdown ≤ 6.00% verified.",
-        "details": "Hard stop loss anchored at 1.64% ATR distance. Daily loss circuit at 0.00% / 1.00%.",
-    },
-    {
-        "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "agent": "Execution Agent",
-        "role": "Manages orders in paper mode",
-        "symbol": "BTCUSDT",
-        "action": "Delta Paper Broker Order Check",
-        "status": "ARMED",
-        "summary": "Delta Exchange Paper Broker armed with 0.05% adverse slippage and 0.05% taker fee model.",
-        "details": "Bracket stop loss and take profit orders verified resting on exchange gateway.",
-    },
     {
         "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "agent": "Portfolio Monitoring Agent",
         "role": "Tracks equity, P&L & drawdown",
         "symbol": "ACCOUNT",
-        "action": "Real-Time MTM Equity Reconciled",
-        "status": "RECONCILED",
-        "summary": "Account equity $6.00 reconciled with zero accounting discrepancy. Drawdown: 0.00%.",
-        "details": "Ledger cash balance matches broker funds exactly. Circuit breaker safe.",
+        "action": "Awaiting live market feed",
+        "status": "STARTING",
+        "summary": "Paper trading only. Live orders are disabled until a real quote arrives.",
+        "details": "No seeded prices are shown. Agent rows after this point come from observed quotes, broker state, and completed cycles.",
     },
 ]
 
@@ -167,9 +119,10 @@ async def update_real_quotes_task():
                                         item["bid"] = best_bid
                                         item["ask"] = best_ask
                                         item["spread_pct"] = spread
+                                        item["source"] = "delta"
                                         found = True
                                         break
-                                if not found:
+                                if not found and mark > 0:
                                     _live_quotes_cache.append({
                                         "symbol": sym,
                                         "ltp": mark,
@@ -178,57 +131,88 @@ async def update_real_quotes_task():
                                         "bid": best_bid,
                                         "ask": best_ask,
                                         "spread_pct": spread,
+                                        "source": "delta",
                                     })
+                    if any(item.get("source") == "delta" for item in _live_quotes_cache):
+                        global _quotes_updated_at
+                        _quotes_updated_at = datetime.now(UTC)
         except Exception as e:
             logger.debug(f"[MarketFeed] Real quote refresh note: {e}")
         await asyncio.sleep(2.0)
 
 
+def _record_agent_action(action: dict) -> None:
+    _live_active_agent_actions.insert(0, action)
+    if len(_live_active_agent_actions) > 80:
+        del _live_active_agent_actions[80:]
+
+
+def _quote_mark(symbols: tuple[str, ...]) -> float | None:
+    for item in _live_quotes_cache:
+        if item.get("symbol") in symbols and float(item.get("ltp") or 0.0) > 0:
+            return float(item["ltp"])
+    return None
+
+
 async def live_agent_evaluation_daemon_task():
-    """Runs continuous 24/7 autonomous multi-agent evaluation cycles and streams active work to event bus."""
-    logger.info("🤖 [Agent Daemon] Starting continuous 24/7 autonomous multi-agent background loop...")
+    """Publishes observed scanner, risk, and broker state. Does not invent approvals or orders."""
+    logger.info("🤖 [Agent Daemon] Starting observed-state agent loop...")
     from orchestration.event_bus import realtime_event_bus, SystemEventType
     from apps.api.office_service import ai_office_service
     from pathlib import Path
-    import json
-    import time
+    from risk.kill_switch import kill_switch
 
     root = Path(__file__).resolve().parent.parent.parent
-    heartbeat_file = root / "data" / "phase4_heartbeat.json"
+    heartbeat_file = root / "data" / "live_session_heartbeat.json"
     cycle = 0
-
     await asyncio.sleep(3.0)
 
     while True:
         try:
             cycle += 1
             now_utc = datetime.now(UTC)
+            btc_mark = _quote_mark(("BTCUSDT", "BTCUSD"))
+            quote_age = None
+            if _quotes_updated_at is not None:
+                quote_age = round((now_utc - _quotes_updated_at).total_seconds(), 1)
 
-            # Update heartbeat state
             try:
-                hb = {}
+                hb: dict[str, Any] = {}
                 if heartbeat_file.exists():
-                    with open(heartbeat_file, "r") as f:
+                    with open(heartbeat_file, "r", encoding="utf-8") as f:
                         hb = json.load(f)
-                hb["status"] = "RUNNING"
-                hb["elapsed_seconds"] = round(hb.get("elapsed_seconds", 0) + 15.0, 2)
-                hb["completed_hours"] = round(hb["elapsed_seconds"] / 3600.0, 2)
-                hb["last_heartbeat"] = now_utc.isoformat()
+                last_seen = hb.get("last_heartbeat")
+                started_at = hb.get("started_at")
+                stale = True
+                if last_seen:
+                    try:
+                        seen_dt = datetime.fromisoformat(str(last_seen))
+                        stale = (now_utc - seen_dt).total_seconds() > 180
+                    except ValueError:
+                        stale = True
+                if stale or not started_at:
+                    started_at = now_utc.isoformat()
                 heartbeat_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(heartbeat_file, "w") as f:
-                    json.dump(hb, f, indent=2)
+                with open(heartbeat_file, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "status": "RUNNING",
+                        "started_at": started_at,
+                        "last_heartbeat": now_utc.isoformat(),
+                        "cycle": cycle,
+                        "trading_mode": settings.TRADING_MODE.value,
+                        "live_trading_enabled": bool(settings.LIVE_TRADING_ENABLED),
+                        "btc_mark": btc_mark,
+                    }, f, indent=2)
             except Exception as e:
                 logger.debug(f"Heartbeat update note: {e}")
 
-            # Get current mark price
-            btc_price = 80100.0
-            for item in _live_quotes_cache:
-                if item["symbol"] in ["BTCUSDT", "BTCUSD"]:
-                    btc_price = item["ltp"]
-                    break
-
-            # 1. Market Scanner Agent
-            scan_msg = f"Cycle #{cycle}: Scanning 5 crypto markets. BTC mark @ ${btc_price:,.2f}. EMA 20/50 trend alignment verified."
+            if btc_mark is None:
+                scan_msg = f"Cycle #{cycle}: Delta quote cache is empty. No mark price is being invented."
+                scan_status = "WAITING"
+            else:
+                age_txt = f"{quote_age:.0f}s old" if quote_age is not None else "just updated"
+                scan_msg = f"Cycle #{cycle}: BTC mark ${btc_mark:,.2f} from Delta ({age_txt}). No strategy approval is implied."
+                scan_status = "OBSERVED"
             realtime_event_bus.publish(
                 event_type=SystemEventType.MARKET_TICK,
                 component="SCANNER_AGENT",
@@ -236,21 +220,21 @@ async def live_agent_evaluation_daemon_task():
                 severity="INFO",
             )
             ai_office_service.add_live_event("Market Scanner Agent", "TECHNICAL_RESEARCH", scan_msg)
-            _live_active_agent_actions.insert(0, {
+            _record_agent_action({
                 "timestamp": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "agent": "Market Scanner Agent",
                 "role": "Scans markets & finds candidates",
                 "symbol": "BTCUSDT",
-                "action": "Scanning 5 Crypto Markets",
-                "status": "DETECTED",
+                "action": "Observed live quote cache",
+                "status": scan_status,
                 "summary": scan_msg,
-                "details": f"Cycle #{cycle}: BTC mark ${btc_price:,.2f} > EMA 20 & EMA 50. Volume & ATR 14 volatility filters passed.",
+                "details": "Quote rows are written only by the Delta ticker poll.",
             })
 
-            await asyncio.sleep(3.0)
-
-            # 2. Strategy Agent
-            strat_msg = f"Cycle #{cycle}: Evaluated BTCUSDT momentum thesis. Bullish trajectory confirmed with Kronos Model. R:R 1.6:1."
+            cycle_summary = _last_daemon_cycle if isinstance(_last_daemon_cycle, dict) else {}
+            cycle_status = str(cycle_summary.get("status") or cycle_summary.get("error") or "NO_CYCLE_YET")
+            orders_submitted = int(cycle_summary.get("orders_submitted") or cycle_summary.get("executed") or 0)
+            strat_msg = f"Cycle #{cycle}: Last trading cycle status is {cycle_status}. Orders submitted this cycle: {orders_submitted}."
             realtime_event_bus.publish(
                 event_type=SystemEventType.MARKET_TICK,
                 component="STRATEGY_AGENT",
@@ -258,66 +242,82 @@ async def live_agent_evaluation_daemon_task():
                 severity="INFO",
             )
             ai_office_service.add_live_event("Strategy Agent", "QUANT_STRATEGY", strat_msg)
-            _live_active_agent_actions.insert(0, {
+            _record_agent_action({
                 "timestamp": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "agent": "Strategy Agent",
                 "role": "Evaluates strategies & regimes",
                 "symbol": "BTCUSDT",
-                "action": "Formulated Momentum Thesis",
-                "status": "APPROVED",
+                "action": "Reported last cycle status",
+                "status": "OBSERVED",
                 "summary": strat_msg,
-                "details": f"Cycle #{cycle}: Kronos Model trajectory forecast aligned. Confluence 82%.",
+                "details": "This row does not approve a trade. Approval happens only inside the risk gate during a cycle.",
             })
 
-            await asyncio.sleep(3.0)
-
-            # 3. Risk Management Agent
-            risk_msg = f"Cycle #{cycle}: 14-Point Pre-Trade Soundness Gate PASSED. Max Drawdown (1.94% ≤ 6.00%), Daily Loss (0.00% ≤ 1.00%)."
+            ks_state = "ENGAGED" if kill_switch.is_engaged else "ARMED"
+            risk_msg = (
+                f"Cycle #{cycle}: Kill switch is {ks_state}. "
+                f"Reason: {kill_switch.reason or 'none'}. Live trading enabled: {settings.LIVE_TRADING_ENABLED}."
+            )
             realtime_event_bus.publish(
                 event_type=SystemEventType.RISK_ALERT,
                 component="RISK_AGENT",
                 message=risk_msg,
-                severity="INFO",
+                severity="WARNING" if kill_switch.is_engaged else "INFO",
             )
             ai_office_service.add_live_event("Risk Management Agent", "RISK_GOVERNANCE", risk_msg)
-            _live_active_agent_actions.insert(0, {
+            _record_agent_action({
                 "timestamp": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "agent": "Risk Management Agent",
                 "role": "Enforces limits & position sizing",
-                "symbol": "BTCUSDT",
-                "action": "Enforced 14-Point Soundness Gate",
-                "status": "PASSED",
+                "symbol": "ACCOUNT",
+                "action": "Checked kill switch",
+                "status": ks_state,
                 "summary": risk_msg,
-                "details": f"Cycle #{cycle}: Stop loss anchored at 1.64% ATR distance. Daily loss 0.00% / 1.00%.",
+                "details": "The 14-point gate result is recorded only when a candidate is actually audited.",
             })
 
-            await asyncio.sleep(3.0)
-
-            # 4. Execution & Sentinel Agent
-            exec_msg = f"Cycle #{cycle}: Delta Paper Broker verified. Adverse slippage (0.05%) & taker fee armed. Bracket stops resting."
+            if orders_submitted > 0:
+                exec_event = SystemEventType.ORDER_SUBMITTED
+                exec_status = "SUBMITTED"
+                exec_msg = f"Cycle #{cycle}: Trading cycle reported {orders_submitted} submitted order(s)."
+            else:
+                exec_event = SystemEventType.MARKET_TICK
+                exec_status = "IDLE"
+                exec_msg = f"Cycle #{cycle}: No order was submitted. Paper broker remains idle for this observation."
             realtime_event_bus.publish(
-                event_type=SystemEventType.ORDER_SUBMITTED,
+                event_type=exec_event,
                 component="EXECUTION_AGENT",
                 message=exec_msg,
                 severity="INFO",
             )
             ai_office_service.add_live_event("Execution Agent", "EXECUTION_DESK", exec_msg)
-            _live_active_agent_actions.insert(0, {
+            _record_agent_action({
                 "timestamp": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "agent": "Execution Agent",
                 "role": "Manages orders in paper mode",
-                "symbol": "BTCUSDT",
-                "action": "Delta Paper Broker Order Check",
-                "status": "ARMED",
+                "symbol": "ACCOUNT",
+                "action": "Checked order submission count",
+                "status": exec_status,
                 "summary": exec_msg,
-                "details": f"Cycle #{cycle}: Delta paper bracket orders resting on gateway. Adverse slippage model active.",
+                "details": "ORDER_SUBMITTED is published only when the last cycle count is greater than zero.",
             })
 
-            await asyncio.sleep(3.0)
-
-            # 5. Portfolio Monitoring Agent
-            port_cap = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
-            port_msg = f"Cycle #{cycle}: Reconciled equity ${port_cap:.2f} MTM. Max Drawdown 0.00% <= 6.00%. Zero balance drift."
+            equity = None
+            try:
+                broker = await get_active_broker()
+                funds = await broker.get_funds()
+                equity = funds.get("total_capital")
+                positions = await broker.get_positions()
+                _position_count_cache["count"] = len(positions)
+                _position_count_cache["ts"] = now_utc.timestamp()
+            except Exception as fund_err:
+                logger.debug(f"[Agent Loop] Broker read note: {fund_err}")
+            if equity is None:
+                port_msg = f"Cycle #{cycle}: Broker equity was not readable. No reconciled balance is being displayed."
+                port_status = "UNAVAILABLE"
+            else:
+                port_msg = f"Cycle #{cycle}: Paper broker equity ${float(equity):.2f}. Open positions: {_position_count_cache['count']}."
+                port_status = "OBSERVED"
             realtime_event_bus.publish(
                 event_type=SystemEventType.POSITION_CHANGED,
                 component="PORTFOLIO_AGENT",
@@ -325,64 +325,76 @@ async def live_agent_evaluation_daemon_task():
                 severity="INFO",
             )
             ai_office_service.add_live_event("Portfolio Monitoring Agent", "ACCOUNTING", port_msg)
-            _live_active_agent_actions.insert(0, {
+            _record_agent_action({
                 "timestamp": now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 "agent": "Portfolio Monitoring Agent",
                 "role": "Tracks equity, P&L & drawdown",
                 "symbol": "ACCOUNT",
-                "action": "Real-Time MTM Equity Reconciled",
-                "status": "RECONCILED",
+                "action": "Read paper broker equity",
+                "status": port_status,
                 "summary": port_msg,
-                "details": f"Cycle #{cycle}: Verified ledger cash matches paper broker margin balance. Peak capital preserved.",
+                "details": "Equity comes from the active paper broker, not from the configured starting capital constant.",
             })
-
-            # Keep active actions list bounded
-            if len(_live_active_agent_actions) > 80:
-                del _live_active_agent_actions[80:]
-
         except Exception as err:
             logger.debug(f"[Agent Loop] Cycle note: {err}")
-
-        # Sleep between cycles
-        await asyncio.sleep(8.0)
+        await asyncio.sleep(20.0)
 
 
-async def live_trading_execution_daemon_task():
-    """Runs continuous 24/7 autonomous trading cycles that execute paper/live trades."""
-    global _daemon_instance, _daemon_is_running, _last_daemon_cycle
-    logger.info("🚀 [Trading Engine] Starting 24/7 autonomous order execution daemon...")
+async def _ensure_trading_daemon():
+    """Create the single paper/live daemon. Never clears an engaged kill switch."""
+    global _daemon_instance
+    if _daemon_instance is not None:
+        return _daemon_instance
     from execution.broker_factory import get_active_broker
     from scanner.quant_scanner import QuantMarketScanner
     from market.providers.yfinance_provider import YFinanceMarketDataProvider
     from apps.daemon.state_machine import AutonomousTradingDaemon
-    from risk.kill_switch import kill_switch
 
+    broker = get_active_broker(settings.EXCHANGE.lower() if settings.EXCHANGE else "delta")
+    funds = await broker.get_funds()
+    cap = float(funds.get("total_capital") or settings.INITIAL_CAPITAL or 0.0)
+    provider = YFinanceMarketDataProvider()
+    universe = "delta" if (settings.EXCHANGE or "").lower() in {"delta", "crypto"} else "bootstrap"
+    scanner = QuantMarketScanner(provider=provider, universe=universe, max_concurrency=5)
+    _daemon_instance = AutonomousTradingDaemon(
+        scanner=scanner,
+        broker=broker,
+        total_capital=cap,
+        top_n_candidates=5,
+    )
+    logger.info(f"✅ [Trading Engine] Daemon ready with capital ${cap:.2f}. Kill switch was not reset.")
+    return _daemon_instance
+
+
+async def _run_guarded_cycle() -> dict:
+    """One trading cycle at a time, shared by the background loop and the manual endpoint."""
+    global _last_daemon_cycle
+    async with _cycle_lock:
+        daemon = await _ensure_trading_daemon()
+        summary = await daemon.run_single_cycle()
+        _last_daemon_cycle = summary if isinstance(summary, dict) else {"status": "completed"}
+        return _last_daemon_cycle
+
+
+async def live_trading_execution_daemon_task():
+    """Single background trading loop. A second loop must not be started while this task is active."""
+    global _daemon_is_running
+    logger.info("🚀 [Trading Engine] Starting single autonomous paper loop...")
+    _daemon_is_running = True
     await asyncio.sleep(6.0)
-
-    while True:
-        try:
-            broker = get_active_broker(settings.EXCHANGE.lower() if settings.EXCHANGE else "delta")
-            funds = await broker.get_funds()
-            cap = float(funds.get("total_capital", 10.0))
-            kill_switch.reset("API Cloud Daemon")
-            provider = YFinanceMarketDataProvider()
-            scanner = QuantMarketScanner(provider=provider, universe="delta", max_concurrency=5)
-            _daemon_instance = AutonomousTradingDaemon(scanner=scanner, broker=broker, total_capital=cap, top_n_candidates=5)
-            _daemon_is_running = True
-            logger.info(f"✅ [Trading Engine] AutonomousTradingDaemon initialized successfully with capital ${cap:.2f}.")
-            break
-        except Exception as init_err:
-            logger.error(f"[Trading Engine] Init error (will retry in 10s): {init_err}")
-            await asyncio.sleep(10.0)
-
-    while True:
-        try:
-            summary = await _daemon_instance.run_single_cycle()
-            _last_daemon_cycle = summary
-            logger.info(f"🪙 [Trading Engine Cycle Completed]: {summary}")
-        except Exception as cycle_err:
-            logger.debug(f"[Trading Engine Cycle note]: {cycle_err}")
-        await asyncio.sleep(45.0)
+    try:
+        while _daemon_is_running:
+            try:
+                summary = await _run_guarded_cycle()
+                logger.info(f"🪙 [Trading Engine Cycle Completed]: {summary}")
+            except Exception as cycle_err:
+                logger.error(f"[Trading Engine Cycle note]: {cycle_err}")
+            await asyncio.sleep(45.0)
+    except asyncio.CancelledError:
+        logger.info("[Trading Engine] Loop cancelled.")
+        raise
+    finally:
+        _daemon_is_running = False
 
 
 async def render_keepalive_task():
@@ -415,7 +427,9 @@ async def lifespan(app: FastAPI):
     background_api_tasks.add(agent_task)
     agent_task.add_done_callback(background_api_tasks.discard)
 
+    global _daemon_loop_task
     trading_task = asyncio.create_task(live_trading_execution_daemon_task())
+    _daemon_loop_task = trading_task
     background_api_tasks.add(trading_task)
     trading_task.add_done_callback(background_api_tasks.discard)
 
@@ -443,6 +457,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_PUBLIC_PATHS = {"/health", "/login", "/api/auth/login", "/api/auth/logout", "/favicon.ico"}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    """Gate the dashboard and API when AUTH_REQUIRED is on. /health stays open for Render."""
+    if not settings.AUTH_REQUIRED:
+        return await call_next(request)
+    path = request.url.path
+    if path in _PUBLIC_PATHS or path.startswith("/static/"):
+        return await call_next(request)
+    token = None
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        token = header.split(" ", 1)[1].strip()
+    if not token:
+        token = request.cookies.get("access_token")
+    from core.auth.security import decode_access_token
+    if not token or not decode_access_token(token):
+        if path.startswith("/api") or path.startswith("/metrics"):
+            return JSONResponse(status_code=401, content={"detail": "Authentication token missing or invalid"})
+        return RedirectResponse(url="/login", status_code=303)
+    return await call_next(request)
+
 app.include_router(guardian_router)
 app.include_router(training_router)
 
@@ -459,11 +497,22 @@ async def serve_dashboard():
     return {"message": "Autonomous AI Trader API Active"}
 
 
+@app.get("/login")
+async def serve_login():
+    login_path = os.path.join(dashboard_dir, "login.html")
+    if os.path.exists(login_path):
+        return FileResponse(login_path)
+    raise HTTPException(status_code=404, detail="Login page missing")
+
+
 @app.websocket("/ws/live-feed")
 async def websocket_live_feed(websocket: WebSocket):
     """Sub-second Real-Time Market Data and AI Telemetry WebSocket Stream."""
     if settings.AUTH_REQUIRED:
-        token = websocket.query_params.get("token")
+        token = websocket.cookies.get("access_token") or websocket.query_params.get("token")
+        header = websocket.headers.get("authorization", "")
+        if header.lower().startswith("bearer "):
+            token = header.split(" ", 1)[1].strip()
         from core.auth.security import decode_access_token
         if not token or not decode_access_token(token):
             await websocket.close(code=1008, reason="Authentication required")
@@ -481,12 +530,22 @@ async def websocket_live_feed(websocket: WebSocket):
                 treasury_metrics["daily_loss_limit"] = round(treasury.starting_capital * settings.MAX_DAILY_LOSS_PCT, 2)
                 treasury_metrics["daily_realized_loss"] = round(abs(min(0.0, treasury.realized_pnl)), 2)
 
+                import time as _time
+                if _time.time() - float(_position_count_cache.get("ts") or 0) > 5:
+                    try:
+                        broker = await get_active_broker()
+                        positions = await broker.get_positions()
+                        _position_count_cache["count"] = len(positions)
+                        _position_count_cache["ts"] = _time.time()
+                    except Exception as pos_err:
+                        logger.debug(f"[WebSocket] Position count note: {pos_err}")
                 payload = {
                     "type": "MARKET_TICK_STREAM",
                     "timestamp": str(datetime.now(UTC)),
                     "quotes": list(_live_quotes_cache),
+                    "quotes_updated_at": _quotes_updated_at.isoformat() if _quotes_updated_at else None,
                     "treasury": treasury_metrics,
-                    "positions_count": 0,
+                    "positions_count": int(_position_count_cache.get("count") or 0),
                 }
                 await websocket.send_json(payload)
             except (WebSocketDisconnect, asyncio.CancelledError):
@@ -506,31 +565,47 @@ _dynamic_ollama_bridge: dict[str, Any] = {
 
 
 @app.post("/api/ollama/register")
-async def register_macbook_ollama(data: dict):
-    """Auto-registers a live MacBook Ollama tunnel endpoint after active reachability check."""
+async def register_macbook_ollama(
+    data: dict,
+    x_bridge_token: Annotated[str | None, Header()] = None,
+):
+    """Registers a public Ollama tunnel. Private and metadata addresses are rejected."""
     import time
     import httpx
-    url = data.get("url")
-    if url:
-        clean_url = url.rstrip("/")
-        _dynamic_ollama_bridge["url"] = clean_url
-        _dynamic_ollama_bridge["last_heartbeat"] = time.time()
-        
-        # Verify endpoint actively responds before routing AI traffic
-        try:
-            async with httpx.AsyncClient(timeout=2.5, headers={"User-Agent": "AutonomousTrader/1.0"}) as client:
-                r = await client.get(f"{clean_url}/api/tags")
-                _dynamic_ollama_bridge["is_verified"] = (r.status_code == 200)
-                if r.status_code != 200:
-                    logger.warning(f"🍏 [MacBook Bridge] Tunnel returned HTTP {r.status_code}. Routing Priority 1 to Cloud Groq/Gemini.")
-                else:
-                    logger.info(f"🍏 [MacBook Bridge] Verified active Ollama tunnel at: {clean_url}")
-        except Exception as e:
-            _dynamic_ollama_bridge["is_verified"] = False
-            logger.debug(f"🍏 [MacBook Bridge] Probe note: {e}")
+    from apps.api.request_guards import bridge_token_matches, validate_public_bridge_url
 
-        return {"status": "registered", "active_url": clean_url, "verified": _dynamic_ollama_bridge["is_verified"]}
-    return {"error": "Missing url"}
+    url = data.get("url") if isinstance(data, dict) else None
+    if not url:
+        return {"error": "Missing url"}
+    token = x_bridge_token or (data.get("token") if isinstance(data, dict) else None)
+    try:
+        clean_url = validate_public_bridge_url(str(url))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not bridge_token_matches(token if isinstance(token, str) else None):
+        _dynamic_ollama_bridge["is_verified"] = False
+        logger.warning("🍏 [MacBook Bridge] Registration refused until OLLAMA_BRIDGE_TOKEN matches. Inference stays on cloud models.")
+        raise HTTPException(
+            status_code=403,
+            detail="OLLAMA_BRIDGE_TOKEN is missing or does not match. The tunnel was not activated.",
+        )
+
+    _dynamic_ollama_bridge["url"] = clean_url
+    _dynamic_ollama_bridge["last_heartbeat"] = time.time()
+    _dynamic_ollama_bridge["is_verified"] = False
+    try:
+        async with httpx.AsyncClient(timeout=2.5, follow_redirects=False, headers={"User-Agent": "AutonomousTrader/1.0"}) as client:
+            r = await client.get(f"{clean_url}/api/tags")
+            _dynamic_ollama_bridge["is_verified"] = r.status_code == 200
+            if r.status_code != 200:
+                logger.warning(f"🍏 [MacBook Bridge] Tunnel returned HTTP {r.status_code}. Cloud models remain primary.")
+            else:
+                logger.info("🍏 [MacBook Bridge] Verified public Ollama tunnel.")
+    except Exception as e:
+        _dynamic_ollama_bridge["is_verified"] = False
+        logger.debug(f"🍏 [MacBook Bridge] Probe note: {e}")
+    return {"status": "registered", "verified": _dynamic_ollama_bridge["is_verified"]}
 
 
 @app.get("/api/ollama/status")
@@ -541,7 +616,6 @@ async def get_macbook_ollama_status():
     is_live = bool(last and (time.time() - last) < 90 and _dynamic_ollama_bridge.get("is_verified", False))
     return {
         "is_active": is_live,
-        "url": _dynamic_ollama_bridge["url"] if is_live else None,
         "last_seen_seconds_ago": round(time.time() - last, 1) if last else None,
         "active_llm_mode": "MacBook Local Ollama" if is_live else "Cloud Groq LPU + Gemini",
     }
@@ -611,7 +685,7 @@ async def get_unified_trade_history(include_historical_ledgers: bool = True) -> 
                     "net_pnl": float(r.realized_pnl or 0.0),
                     "total_fee": float(r.brokerage_and_fees or 0.0),
                     "account_equity_after": 0.0,
-                    "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "timestamp": r.completed_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(r, "completed_at", None) else "—",
                 })
     except Exception as e:
         logger.debug(f"[UnifiedTrades] TradeGuardian read note: {e}")
@@ -865,15 +939,24 @@ async def get_market_quotes():
 async def get_market_trades(symbol: str = "BTCUSDT", limit: int = 30):
     """Returns real-time live market trade tape for crypto assets."""
     import httpx
+    from apps.api.request_guards import clamp_limit, normalize_market_symbol
+    try:
+        symbol = normalize_market_symbol(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    limit = clamp_limit(limit, default=30, maximum=100)
     try:
         binance_sym = symbol.replace("-", "").upper()
         if not binance_sym.endswith("USDT") and not binance_sym.endswith("USD"):
             binance_sym += "USDT"
-        elif binance_sym.endswith("USD"):
+        elif binance_sym.endswith("USD") and not binance_sym.endswith("USDT"):
             binance_sym += "T"
 
         async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get(f"https://api.binance.com/api/v3/trades?symbol={binance_sym}&limit={limit}")
+            r = await client.get(
+                "https://api.binance.com/api/v3/trades",
+                params={"symbol": binance_sym, "limit": limit},
+            )
             if r.status_code == 200:
                 raw_trades = r.json()
                 trades = [
@@ -897,6 +980,12 @@ async def get_market_trades(symbol: str = "BTCUSDT", limit: int = 30):
 @app.get("/api/market/candles")
 async def get_market_candles(symbol: str = "BTCUSDT", interval: str = "5m", period: str = "2d"):
     """Returns real-time candlestick OHLCV and technical indicator data from Delta Exchange."""
+    from apps.api.request_guards import normalize_candle_interval, normalize_market_symbol, price_decimals
+    try:
+        symbol = normalize_market_symbol(symbol)
+        interval = normalize_candle_interval(interval)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         import pandas as pd
         import httpx
@@ -904,7 +993,7 @@ async def get_market_candles(symbol: str = "BTCUSDT", interval: str = "5m", peri
 
         df = None
         # Try Delta Exchange direct chart history first for crypto
-        delta_symbol = symbol.replace("USDT", "USD").replace("-USD", "USD")
+        delta_symbol = normalize_market_symbol(symbol.replace("USDT", "USD").replace("-USD", "USD"))
         res_map = {"1m": "1", "5m": "5", "15m": "15", "1h": "60", "4h": "240", "1d": "D", "1D": "D"}
         resolution = res_map.get(interval, "5")
         now_ts = int(time.time())
@@ -960,16 +1049,17 @@ async def get_market_candles(symbol: str = "BTCUSDT", interval: str = "5m", peri
                 e50 = float(ema50.iloc[i_idx]) if not pd.isna(ema50.iloc[i_idx]) else c
                 a14 = float(atr14.iloc[i_idx]) if not pd.isna(atr14.iloc[i_idx]) else 0.0
 
+                px = price_decimals(c)
                 candles.append({
                     "time": t,
-                    "open": round(o, 4),
-                    "high": round(h, 4),
-                    "low": round(l, 4),
-                    "close": round(c, 4),
+                    "open": round(o, px),
+                    "high": round(h, px),
+                    "low": round(l, px),
+                    "close": round(c, px),
                     "volume": round(v, 2),
-                    "ema20": round(e20, 4),
-                    "ema50": round(e50, 4),
-                    "atr14": round(a14, 4),
+                    "ema20": round(e20, px),
+                    "ema50": round(e50, px),
+                    "atr14": round(a14, px),
                 })
         return {
             "symbol": symbol,
@@ -990,14 +1080,11 @@ async def get_evaluation_status():
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent
 
-    hb_file = root / "data" / "phase4_heartbeat.json"
-    if not hb_file.exists():
-        hb_file = root / "data_phase4e" / "phase4e_heartbeat.json"
-
+    hb_file = root / "data" / "live_session_heartbeat.json"
     hb = {}
     if hb_file.exists():
         try:
-            with open(hb_file, "r") as f:
+            with open(hb_file, "r", encoding="utf-8") as f:
                 hb = json.load(f)
         except Exception:
             pass
@@ -1033,23 +1120,42 @@ async def get_evaluation_status():
     win_rate = round((winning_trades / max(1, live_trades_count)) * 100, 1) if live_trades_count > 0 else 0.0
 
     target_hours = 72.0  # 3-Day Go-Live Evaluation window
-    elapsed_secs = hb.get("elapsed_seconds", 3600.0)
-    completed_hours = elapsed_secs / 3600.0
-    progress_pct = round((completed_hours / target_hours) * 100.0, 2) if target_hours > 0 else 1.0
-    progress_pct = min(100.0, max(0.1, progress_pct))
-
     now_utc = datetime.now(UTC)
+    elapsed_secs = 0.0
+    started_raw = hb.get("started_at")
+    last_raw = hb.get("last_heartbeat")
+    session_fresh = False
+    if started_raw and last_raw:
+        try:
+            last_dt = datetime.fromisoformat(str(last_raw))
+            start_dt_parsed = datetime.fromisoformat(str(started_raw))
+            if (now_utc - last_dt).total_seconds() <= 180:
+                elapsed_secs = max(0.0, (now_utc - start_dt_parsed).total_seconds())
+                session_fresh = True
+        except ValueError:
+            session_fresh = False
+    completed_hours = elapsed_secs / 3600.0
+    progress_pct = round((completed_hours / target_hours) * 100.0, 2) if target_hours > 0 else 0.0
+    progress_pct = min(100.0, max(0.0, progress_pct))
+
     start_dt = now_utc - timedelta(seconds=elapsed_secs)
     target_end_dt = start_dt + timedelta(hours=target_hours)
     start_str = start_dt.strftime("%b %d, %Y %H:%M UTC")
     end_str = target_end_dt.strftime("%b %d, %Y %H:%M UTC")
 
     phase_title = "3-Day Paper Evaluation (Go-Live Gate)"
+    session_status = "RUNNING" if session_fresh else "IDLE"
+    drawdown_pct = 0.0
+    if display_starting_capital > 0 and display_equity is not None:
+        drawdown_pct = round(max(0.0, (display_starting_capital - float(display_equity)) / display_starting_capital) * 100, 2)
+    daily_loss_pct = round((drisk.get("accumulated_loss", 0.0) / max(drisk.get("day_start_equity", display_starting_capital), 1.0)) * 100, 2)
+    drawdown_limit = settings.MAX_PORTFOLIO_DRAWDOWN_PCT * 100
+    daily_limit = settings.MAX_DAILY_LOSS_PCT * 100
 
     return {
         "evaluation_id": phase_title,
         "phase": phase_title,
-        "status": "RUNNING",
+        "status": session_status,
         "start_time": start_str,
         "target_end_time": end_str,
         "elapsed_seconds": elapsed_secs,
@@ -1060,17 +1166,17 @@ async def get_evaluation_status():
         "progress_pct": progress_pct,
         "starting_capital": display_starting_capital,
         "current_equity": display_equity,
-        "drawdown_pct": hb.get("drawdown_pct", 0.0),
+        "drawdown_pct": drawdown_pct,
         "total_trades": live_trades_count,
-        "daily_loss_realized_pct": round((drisk.get("accumulated_loss", 0.0) / max(drisk.get("day_start_equity", display_starting_capital), 1.0)) * 100, 2),
-        "daily_loss_limit_pct": settings.MAX_DAILY_LOSS_PCT * 100,
-        "max_drawdown_limit_pct": settings.MAX_PORTFOLIO_DRAWDOWN_PCT * 100,
+        "daily_loss_realized_pct": daily_loss_pct,
+        "daily_loss_limit_pct": daily_limit,
+        "max_drawdown_limit_pct": drawdown_limit,
         "acceptance_criteria": [
-            {"criterion": "Completed round trips", "target": "≥ 0 completed round trips", "status": "PASS"},
+            {"criterion": "Completed round trips", "target": "Observed from today's closed trades", "status": "PENDING" if live_trades_count == 0 else "OBSERVED"},
             {"criterion": "Profit Factor", "target": "Profit factor ≥ 1.60", "status": "PENDING"},
-            {"criterion": "Maximum Drawdown", "target": f"Max drawdown ≤ {settings.MAX_PORTFOLIO_DRAWDOWN_PCT * 100:.2f}%", "status": "PASS"},
-            {"criterion": "Daily Loss Breaches", "target": f"≤ 2 daily-loss breaches (≤ {settings.MAX_DAILY_LOSS_PCT * 100:.2f}%)", "status": "PASS"},
-            {"criterion": "System Stability", "target": "Zero crashes / clean recovery", "status": "PASS"},
+            {"criterion": "Maximum Drawdown", "target": f"Max drawdown ≤ {drawdown_limit:.2f}%", "status": "PASS" if drawdown_pct <= drawdown_limit else "FAIL"},
+            {"criterion": "Daily Loss Breaches", "target": f"Daily loss ≤ {daily_limit:.2f}%", "status": "PASS" if daily_loss_pct <= daily_limit else "FAIL"},
+            {"criterion": "System Stability", "target": "Zero crashes / clean recovery", "status": "PENDING"},
         ],
         "telemetry_metrics": {
             "trades_closed": live_trades_count,
@@ -1699,37 +1805,8 @@ _last_daemon_cycle: dict = {}
 
 
 async def _daemon_loop():
-    global _daemon_instance, _daemon_is_running, _last_daemon_cycle
-    from apps.daemon.state_machine import AutonomousTradingDaemon
-    from market.providers.yfinance_provider import YFinanceMarketDataProvider
-    from scanner.quant_scanner import QuantMarketScanner
-    from core.treasury.treasury import treasury
-
-    broker = await get_active_broker()
-    provider = YFinanceMarketDataProvider()
-    is_crypto = (settings.EXCHANGE or "").lower() in ["delta", "crypto"] or "DELTA" in type(broker).__name__.upper()
-    target_univ = "delta" if is_crypto else "bootstrap"
-    scanner = QuantMarketScanner(provider=provider, universe=target_univ, max_concurrency=5)
-    _daemon_instance = AutonomousTradingDaemon(
-        scanner=scanner,
-        broker=broker,
-        total_capital=treasury.current_capital,
-        top_n_candidates=3,
-    )
-    _daemon_is_running = True
-    logger.info("🚀 [Autonomous Daemon] Started background trading loop.")
-    try:
-        while _daemon_is_running:
-            try:
-                summary = await _daemon_instance.run_single_cycle()
-                _last_daemon_cycle = summary
-            except Exception as e:
-                logger.error(f"[Autonomous Daemon] Error during cycle: {e}")
-            await asyncio.sleep(60.0)
-    except asyncio.CancelledError:
-        logger.info("[Autonomous Daemon] Loop cancelled gracefully.")
-    finally:
-        _daemon_is_running = False
+    """Manual start uses the same single loop as process startup."""
+    await live_trading_execution_daemon_task()
 
 
 @app.get("/api/daemon/status", dependencies=[Depends(get_current_user)])
@@ -1756,8 +1833,9 @@ async def get_daemon_status():
 async def start_daemon_loop():
     """Starts the continuous autonomous trading daemon loop in background."""
     global _daemon_loop_task, _daemon_is_running
-    if _daemon_is_running:
+    if _daemon_loop_task is not None and not _daemon_loop_task.done():
         return {"status": "ALREADY_RUNNING", "message": "Autonomous trading daemon is already running."}
+    _daemon_is_running = True
     _daemon_loop_task = asyncio.create_task(_daemon_loop())
     background_api_tasks.add(_daemon_loop_task)
     _daemon_loop_task.add_done_callback(background_api_tasks.discard)
@@ -1777,26 +1855,8 @@ async def stop_daemon_loop():
 @app.post("/api/daemon/cycle", dependencies=[Depends(get_current_user)])
 async def run_single_daemon_cycle():
     """Executes a single end-to-end scanning, debate, audit, and execution cycle."""
-    global _daemon_instance, _last_daemon_cycle
-    from apps.daemon.state_machine import AutonomousTradingDaemon
-    from market.providers.yfinance_provider import YFinanceMarketDataProvider
-    from scanner.quant_scanner import QuantMarketScanner
-    from core.treasury.treasury import treasury
-
     try:
-        if _daemon_instance is None:
-            broker = await get_active_broker()
-            provider = YFinanceMarketDataProvider()
-            target_univ = "delta" if (settings.EXCHANGE or "").lower() == "delta" else "bootstrap"
-            scanner = QuantMarketScanner(provider=provider, universe=target_univ, max_concurrency=5)
-            _daemon_instance = AutonomousTradingDaemon(
-                scanner=scanner,
-                broker=broker,
-                total_capital=treasury.current_capital,
-                top_n_candidates=3,
-            )
-        summary = await _daemon_instance.run_single_cycle()
-        _last_daemon_cycle = summary
+        summary = await _run_guarded_cycle()
         return {"status": "SUCCESS", "cycle_summary": summary}
     except Exception as e:
         logger.error(f"[Daemon Cycle Endpoint Error]: {e}")
@@ -1837,20 +1897,40 @@ async def get_risk_portfolio_data():
 # AUTHENTICATION & REMOTE ACCESS API
 # ==========================================
 
+def _cookie_secure(request: Request) -> bool:
+    forwarded = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return forwarded.split(",")[0].strip() == "https"
+
+
 @app.post("/api/auth/login", response_model=TokenResponse)
-async def login(req: LoginRequest):
-    """Authenticates admin user and returns a cryptographically signed JWT token."""
+async def login(req: LoginRequest, request: Request, response: Response):
+    """Authenticates the operator and sets an HttpOnly session cookie."""
     user = authenticate_user(req.username, req.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     token = create_access_token(user.model_dump())
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=_cookie_secure(request),
+        max_age=settings.JWT_EXPIRY_HOURS * 3600,
+        path="/",
+    )
     return TokenResponse(
         access_token=token,
         token_type="bearer",
         expires_in_hours=settings.JWT_EXPIRY_HOURS,
         user=user.model_dump(),
     )
+
+
+@app.post("/api/auth/logout")
+async def logout(response: Response):
+    response.delete_cookie("access_token", path="/")
+    return {"status": "logged_out"}
 
 
 @app.get("/api/auth/me")
@@ -2059,8 +2139,9 @@ async def get_agent_actions(agent_filter: str | None = None, limit: int = 150):
     root = Path(__file__).resolve().parent.parent.parent
 
     actions = []
+    today_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    # 1. Real-time active agent actions from live running autonomous daemon
+    # 1. Observed agent actions from the live process. Historical soak files are not replayed as current work.
     actions.extend(_live_active_agent_actions)
 
     # 2. Strategy & Risk Agent Actions from DB decisions
@@ -2119,6 +2200,8 @@ async def get_agent_actions(agent_filter: str | None = None, limit: int = 150):
             with open(audit_file, mode="r", encoding="utf-8") as f:
                 records = json.load(f)
                 for r in records[-50:]:
+                    if not str(r.get("timestamp", "")).startswith(today_prefix):
+                        continue
                     actions.append({
                         "timestamp": r.get("timestamp", ""),
                         "agent": "Execution Agent",
@@ -2141,6 +2224,8 @@ async def get_agent_actions(agent_filter: str | None = None, limit: int = 150):
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 for r in rows[-40:]:
+                    if not str(r.get("timestamp", "")).startswith(today_prefix):
+                        continue
                     actions.append({
                         "timestamp": r.get("timestamp", ""),
                         "agent": "Portfolio Monitoring Agent",

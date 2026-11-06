@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — AI Trading Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080c14;
+      --ink: #f8fafc;
+      --muted: #94a3b8;
+      --line: rgba(255, 255, 255, 0.12);
+      --cyan: #06b6d4;
+      --danger: #fca5a5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Outfit, sans-serif;
+    }
+    main {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(240px, 1fr) minmax(280px, 420px);
+    }
+    .mark {
+      padding: 48px 40px;
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .mark h1 {
+      margin: 0;
+      font-size: clamp(40px, 6vw, 72px);
+      line-height: 0.95;
+      font-weight: 600;
+      letter-spacing: -0.04em;
+      max-width: 8ch;
+    }
+    .mark p {
+      margin: 20px 0 0;
+      max-width: 28ch;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    .mode {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: var(--cyan);
+    }
+    form {
+      padding: 48px 36px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 14px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 14px;
+    }
+    input {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font: inherit;
+      font-size: 16px;
+    }
+    input:focus {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+    button {
+      margin-top: 8px;
+      background: var(--ink);
+      color: var(--bg);
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    #formError {
+      min-height: 1.2em;
+      margin: 0;
+      color: var(--danger);
+      font-size: 14px;
+    }
+    @media (max-width: 720px) {
+      main { grid-template-columns: 1fr; }
+      .mark { border-right: 0; border-bottom: 1px solid var(--line); min-height: auto; }
+      form { padding-top: 28px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="mark">
+      <div>
+        <h1>Sign in to the desk</h1>
+        <p>Paper trading stays on. This gate only opens the dashboard.</p>
+      </div>
+      <div class="mode">LIVE TRADING DISABLED</div>
+    </section>
+    <form id="loginForm">
+      <label>
+        User ID
+        <input id="username" name="username" autocomplete="username" required>
+      </label>
+      <label>
+        Password
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="formError" role="alert"></p>
+      <button type="submit" id="submitBtn">Sign in</button>
+    </form>
+  </main>
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorEl = document.getElementById('formError');
+    const submitBtn = document.getElementById('submitBtn');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorEl.textContent = '';
+      submitBtn.disabled = true;
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        });
+        if (!response.ok) {
+          errorEl.textContent = 'That user ID or password is wrong.';
+          return;
+        }
+        window.location.href = '/';
+      } catch (err) {
+        errorEl.textContent = 'The desk did not respond. Try again.';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

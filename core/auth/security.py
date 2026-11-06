@@ -11,7 +11,7 @@ import time
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -90,19 +90,31 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
 security_scheme = HTTPBearer(auto_error=False)
 
 
+def token_from_request(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str | None:
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    cookie = request.cookies.get("access_token")
+    return cookie or None
+
+
 def get_current_user(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(security_scheme)] = None,
 ) -> dict[str, Any]:
     """FastAPI dependency to enforce JWT Authentication on protected endpoints."""
+    token = token_from_request(request, credentials)
     if settings.AUTH_REQUIRED:
-        if not credentials or not credentials.credentials:
+        if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication token missing or invalid",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        payload = decode_access_token(credentials.credentials)
+        payload = decode_access_token(token)
         if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -112,9 +124,8 @@ def get_current_user(
 
         return payload
 
-    # In local testing mode without AUTH_REQUIRED, accept valid token if supplied
-    if credentials and credentials.credentials:
-        payload = decode_access_token(credentials.credentials)
+    if token:
+        payload = decode_access_token(token)
         if payload:
             return payload
 
@@ -137,10 +148,12 @@ def authenticate_user(username: str, password: str) -> UserProfile | None:
     admin_user = settings.ADMIN_USERNAME
     admin_pass = settings.ADMIN_PASSWORD
 
-    if not admin_pass or not password:
+    if not admin_pass or not password or not username:
         return None
 
-    if username == admin_user and (password == admin_pass or verify_password(password, admin_pass)):
+    name_ok = hmac.compare_digest(username, admin_user) if len(username) == len(admin_user) else False
+    secret_ok = verify_password(password, admin_pass)
+    if name_ok and secret_ok:
         return UserProfile(
             username=username,
             role="SUPER_ADMIN",

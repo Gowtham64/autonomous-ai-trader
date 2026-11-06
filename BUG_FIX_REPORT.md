@@ -1,47 +1,59 @@
-# Autonomous AI Trader — Bug Fix Report
+# Bug Fix Report
 
-## 1. Summary of Identified & Remediated Defects
+Each row was reproduced from source or from the local API. "Fixed" means the code change is in the tree and a test or a local request checked the behavior. Production on Render does not have these fixes until a deploy.
 
-| ID | Component | Severity | Description | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **BUG-01** | `intelligence/kronos_service.py` | **CRITICAL** | Render 512MB RAM Out-Of-Memory Crash caused by eager `import torch` at startup | **FIXED** |
-| **BUG-02** | `apps/api/main.py` | **CRITICAL** | `NameError: name 'timedelta' is not defined` causing HTTP 500 on `/api/evaluation/status` | **FIXED** |
-| **BUG-03** | `apps/api/main.py` | **HIGH** | Historical October backtest ledger leaking into live dashboard KPI metrics | **FIXED** |
-| **BUG-04** | `apps/api/main.py` | **HIGH** | Orders and Trade History endpoints showing old October 2026 backtest records | **FIXED** |
-| **BUG-05** | `agents/trader/fund_manager.py` | **HIGH** | Sub-dollar crypto tokens experiencing decimal truncation, distorting SL/TP | **FIXED** |
-| **BUG-06** | `execution/paper/delta_paper.py` | **MEDIUM** | Disk state auto-loading during pytest runs, causing 20 test assertion failures | **FIXED** |
-| **BUG-07** | `scanner/quant_scanner.py` | **MEDIUM** | Fixed asset scan pool preventing account from compound-trading higher cap crypto | **FIXED** |
+## Fixed
 
----
+### Kill switch cleared on boot
+- **Cause:** `live_trading_execution_daemon_task` called `kill_switch.reset("API Cloud Daemon")` before the first cycle.
+- **Effect:** A halt did not survive a process restart.
+- **Change:** That call is gone. `tests/test_audit_repairs.py::test_startup_source_does_not_reset_kill_switch` checks the source and that `trigger` still leaves the switch engaged.
+- **Check:** Local startup log said the kill switch was not reset.
 
-## 2. Detailed Technical Fixes
+### Overlapping trading cycles
+- **Cause:** The lifespan loop did not look at `_daemon_is_running`, and `/api/daemon/start` built a second `AutonomousTradingDaemon`.
+- **Effect:** Two cycles could size and submit paper orders for the same signal.
+- **Change:** `_run_guarded_cycle` holds `_cycle_lock`. Start reuses the lifespan task. Stop cancels that task.
+- **Check:** Code path review. A second live loop was not started during the browser check.
 
-### BUG-01: Render 512MB RAM Out-Of-Memory Crash
-- **Root Cause**: `import torch` at module top-level immediately allocated ~350MB RSS baseline. When combined with concurrent scanning of 40 crypto tickers, memory breached 512MB, crashing the container.
-- **Fix**:
-  1. Converted PyTorch import to lazy-loaded pattern in `intelligence/kronos_service.py`, executing only when `ENABLE_KRONOS_MODEL=true`.
-  2. Reduced quant scanner pool to 15 prioritized assets with concurrency bounded to 4 workers.
-  3. Added explicit garbage collection (`gc.collect()`) after scanning rounds.
-- **Validation**: Container memory stabilized at ~260MB RSS; Render service running healthy.
+### Fabricated agent approvals
+- **Cause:** The agent task wrote APPROVED / PASSED / ORDER_SUBMITTED every cycle, including a fixed BTC price of 80,100 when the cache was empty.
+- **Change:** Status values are WAITING, OBSERVED, ENGAGED, ARMED, IDLE, or SUBMITTED. Order events require `orders_submitted` or `executed` on the last cycle summary.
+- **Check:** `test_agent_actions_are_not_preapproved`. Browser agent cards no longer show a 73% win rate or a $1,000 balance.
 
-### BUG-02: Missing `timedelta` Import in `/api/evaluation/status`
-- **Root Cause**: Route handler used `now_utc - timedelta(seconds=elapsed_secs)` without importing `timedelta` from `datetime`.
-- **Fix**: Added `timedelta` to the import block in `apps/api/main.py`.
-- **Validation**: Route returns valid HTTP 200 JSON payload with dynamic evaluation status.
+### Seeded market prices
+- **Cause:** `_live_quotes_cache` and several HTML nodes were initialized with fixed prices and percent changes.
+- **Change:** Cache starts empty. HTML uses "—". Quotes appear after the Delta poll. Candles use Delta history (576 rows, last price about 75,800 in the local check).
+- **Check:** `test_quotes_do_not_ship_seeded_equity_prices`. Browser Markets tab showed BTC 75,892.83 from Delta, not 67,420.50.
 
-### BUG-03 & BUG-04: Historical Backtest Leakage
-- **Root Cause**: `/api/performance` and `/api/orders` called `get_unified_trade_history()` without disabling historical ledgers (`PAPER_7DAY_TRADE_LEDGER.csv` and `order_audit_records.json`).
-- **Fix**:
-  1. Updated calls to pass `include_historical_ledgers=False`.
-  2. Applied date filter `t.get("timestamp").startswith(today_prefix)` to strictly isolate live executions for the current UTC date.
-- **Validation**: KPIs accurately report today's session starting from $6.00 equity.
+### Evaluation clock inherited an old soak
+- **Cause:** The agent task rewrote `data/phase4_heartbeat.json` (elapsed 6,249 seconds, status STOPPED, October timestamp) and the API treated that as the 3-day run. Missing files defaulted to 3,600 seconds. Criteria were hardcoded PASS.
+- **Change:** Session file is `data/live_session_heartbeat.json`. Stale heartbeats count as zero elapsed and status IDLE. Drawdown and daily loss are compared with settings. Stability stays PENDING.
+- **Check:** `test_evaluation_does_not_replay_old_soak_clock`. Local `/api/evaluation/status` elapsed was about 6 seconds.
 
-### BUG-05: Sub-Dollar Price Precision & Risk Engine Gate
-- **Root Cause**: Tokens with price < $1.00 (e.g. DOGE at $0.14, ALT at $0.008) suffered floating-point truncation when rounded to 2 decimal places, causing stop loss and take profit values to collide and fail the 1.50:1 R:R gate.
-- **Fix**: Calibrated dynamic decimal precision up to 8 places in `agents/trader/fund_manager.py` and added a 0.05 floating-point tolerance in `risk/engine.py`.
-- **Validation**: Verified sub-dollar bracket calculation and risk gate approval.
+### Ollama registration SSRF
+- **Cause:** `POST /api/ollama/register` GET the caller URL with no host check, and a successful probe became the first LLM route.
+- **Change:** `apps/api/request_guards.py` rejects non-public hosts. Inference stays off unless `OLLAMA_BRIDGE_TOKEN` matches. `scripts/auto_mac_bridge.py` sends that token when it is set.
+- **Check:** Metadata URL returned 400. Public IP without the token returned 403.
 
-### BUG-06: Delta Paper Broker Test State Bleed
-- **Root Cause**: `DeltaPaperBroker.__init__` unconditionally loaded `data/paper_broker_state.json` from disk, polluting unit tests with runtime state.
-- **Fix**: Added check `if not os.environ.get("PYTEST_CURRENT_TEST")` to skip disk loads during automated test execution.
-- **Validation**: All 90 pytest tests now pass cleanly (100% pass rate).
+### Guardian trade dates
+- **Cause:** Unified history used `datetime.now()` for guardian exits.
+- **Change:** Uses `PostTradeQualityReport.completed_at`.
+- **Check:** `test_guardian_timestamp_uses_completed_at` expects `2026-01-02`.
+
+### Candle precision and symbol injection
+- **Cause:** OHLC rounded to 4 places. `symbol` was placed in the Delta query string.
+- **Change:** `price_decimals` and `normalize_market_symbol`.
+- **Check:** Unit test for 8 decimals under $1. Local candle request with `../../etc/passwd` returned 400.
+
+### Integer contract size
+- **Cause:** `OrderEntity.quantity` and `PositionEntity.quantity` were integers.
+- **Change:** Float columns on the model. SQLite `create_all` will not alter an existing file; new Python writes no longer coerce through `Integer`.
+
+## Left open
+
+- Control routes (`/api/kill-switch`, `/api/daemon/start`, `/api/daemon/cycle`, skill execute) do not require a password while `AUTH_REQUIRED=false`.
+- Public trade tape still reads Binance, while marks and candles read Delta. Prices can disagree.
+- `decision_id` on orders is not a foreign key.
+- Historical database decisions can still appear in `/api/office/agent-actions`. They are stored rows, not the timer script.
+- Render has not been updated.

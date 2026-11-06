@@ -1,75 +1,35 @@
-# Autonomous AI Trader — Database Audit Report
+# Database Audit
 
-## 1. Database Architecture & Technology
+## Engine
 
-- **Database Engine**: SQLite 3 (Async mode via `aiosqlite` and SQLAlchemy 2.0).
-- **Session Management**: Scoped async sessions via `AsyncSessionLocal` with strict context manager boundaries.
-- **Connection URL**: Configured via `settings.DATABASE_URL` with persistent file storage.
+`database/session.py` uses SQLAlchemy async. Default URL is `sqlite+aiosqlite:///./data/trader.db`. `init_db` runs on API startup. There is no Postgres service in `render.yaml`. Render's disk is ephemeral, so this file disappears when the instance is replaced unless a persistent disk is added later.
 
----
+## Tables in `database/models/tables.py`
 
-## 2. Entity Schema & Relationship Audit
+| Table | Primary key | Notes |
+| --- | --- | --- |
+| `trade_decisions` | `analysis_id` | Indexed `symbol`. Thesis stored as JSON text. |
+| `orders` | `order_id` | Unique `client_order_id`. `decision_id` is indexed and is not a foreign key. |
+| `positions` | `position_id` | `is_active` indexed. |
+| `trade_journal` | integer `id` | No quantity column. Side is inferred later from `reflection_notes`, which is weak. |
 
-### 2.1 Core Entities (`database/models/tables.py`)
+`database/models/data_metrics_tables.py` adds market, indicator, fundamental, regime, sentiment, and metric tables. They are separate from the order book.
 
-1. **`UserEntity` (`users`)**:
-   - `id`: Integer (Primary Key).
-   - `username`: String(64) (Unique, Indexed).
-   - `hashed_password`: String(256).
-   - `role`: Enum (`ADMIN`, `OPERATOR`, `VIEWER`).
-   - `is_active`: Boolean (Default: True).
-   - `created_at`: DateTime (UTC).
+## Integrity
 
-2. **`OrderEntity` (`orders`)**:
-   - `id`: Integer (Primary Key).
-   - `order_id`: String(64) (Unique, Indexed).
-   - `client_order_id`: String(64) (Indexed).
-   - `symbol`: String(32) (Indexed).
-   - `action`: String(8) (`BUY` / `SELL`).
-   - `order_type`: String(16) (`LIMIT` / `MARKET` / `STOP`).
-   - `status`: String(16) (`PENDING` / `FILLED` / `CANCELLED` / `REJECTED`).
-   - `quantity`: Float.
-   - `price`: Float.
-   - `average_price`: Float.
-   - `created_at`: DateTime (UTC).
-   - `executed_at`: DateTime (UTC, Nullable).
+- No `ForeignKey` from `orders.decision_id` to `trade_decisions.analysis_id`, or from positions to orders. Orphan rows are possible.
+- No unique constraint on an open position per symbol. Duplicate open positions are prevented in the trading loop by the new cycle lock, not by the database.
+- `DateTime` columns have no timezone type. Writers use `datetime.now(UTC)`. Readers must keep treating stored values as UTC.
+- SQLite has no row-level security. Anyone who can read the file can read the journal.
+- Quantity on `orders` and `positions` is now `Float` in the model so fractional Delta sizes are not coerced to `int` in Python. An existing SQLite file is not migrated in place. SQLite will still store the value. A rebuilt database picks up the float column type.
 
-3. **`PositionEntity` (`positions`)**:
-   - `id`: Integer (Primary Key).
-   - `symbol`: String(32) (Unique, Indexed).
-   - `side`: String(8) (`BUY` / `SELL`).
-   - `quantity`: Float.
-   - `entry_price`: Float.
-   - `current_price`: Float.
-   - `stop_loss`: Float.
-   - `take_profit`: Float.
-   - `unrealized_pnl`: Float.
-   - `realized_pnl`: Float.
-   - `is_active`: Boolean (Indexed).
-   - `opened_at`: DateTime (UTC).
-   - `closed_at`: DateTime (UTC, Nullable).
+## What this audit did not do
 
-4. **`TradeJournalEntity` (`trade_journal`)**:
-   - `id`: Integer (Primary Key).
-   - `symbol`: String(32) (Indexed).
-   - `entry_price`: Float.
-   - `exit_price`: Float.
-   - `pnl`: Float.
-   - `exit_reason`: String(64).
-   - `reflection_notes`: Text.
-   - `logged_at`: DateTime (UTC, Indexed).
+- No rows were deleted.
+- No production migration ran.
+- Duplicate detection across historical CSV ledgers and `trade_journal` was not re-counted. Today's API filters by date instead of merging the 7-day CSV into live P&L.
+- Backup is "whatever is on the instance disk." There is no tested restore procedure in this run.
 
-5. **`SystemEventEntity` (`system_events`)**:
-   - `id`: Integer (Primary Key).
-   - `event_type`: String(32) (Indexed).
-   - `component`: String(32) (Indexed).
-   - `message`: Text.
-   - `severity`: String(16) (`INFO` / `WARNING` / `ERROR` / `CRITICAL`).
-   - `timestamp`: DateTime (UTC, Indexed).
+## Paper files outside SQL
 
----
-
-## 3. Data Integrity & Concurrency Controls
-- **Atomicity**: Order placements and position mutations execute inside atomic transactions (`session.commit()` on success, `session.rollback()` on error).
-- **Zero Historical Overwrites**: Historical trade journal entries are immutable append-only records.
-- **Index Optimization**: B-Tree indexes placed on high-cardinality query keys (`order_id`, `symbol`, `is_active`, `logged_at`).
+`data/paper_broker_state.json` and `data/daily_risk_state.json` are the live paper book for the process. The verification server modified them. Those two files were restored with `git checkout` so the audit's paper fills are not left in the worktree. `data/live_session_heartbeat.json` was removed after the process stopped. Historical soak files were not edited.

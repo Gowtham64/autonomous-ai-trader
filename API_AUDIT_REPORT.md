@@ -1,28 +1,40 @@
-# Autonomous AI Trader — API Audit Report
+# API Audit
 
-## 1. Endpoint Inventory & Verification Status
+Routes are declared in `apps/api/main.py`, `apps/api/routers/guardian.py`, and `apps/api/routers/training.py`. This inventory is from source. Only the rows in "Exercised" were called.
 
-All endpoints were tested live against the Render production deployment (`https://autonomous-ai-trader.onrender.com`).
+## Exercised locally
 
-| Method | Endpoint | Auth Required | Status Code | Response Payload Size | Verified Functionality |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| **GET** | `/api/performance` | No | `200 OK` | ~4.8 KB | Live equity, realized/unrealized P&L, today's trade count, drawdown |
-| **GET** | `/api/positions` | Yes | `200 OK` | ~1.7 KB | Active broker positions, mark prices, SL/TP brackets, age |
-| **GET** | `/api/orders` | No | `200 OK` | ~5.6 KB | Resting broker orders and today's completed trade journal |
-| **GET** | `/api/evaluation/status` | No | `200 OK` | ~1.4 KB | 3-Day evaluation progress %, elapsed runtime, acceptance criteria |
-| **GET** | `/api/market/quotes` | No | `200 OK` | ~1.6 KB | Real-time prices from Delta Exchange (BTC, ETH, SOL, XRP, DOGE) |
-| **GET** | `/api/market/candles` | No | `200 OK` | ~7.4 KB | Historical candles with EMA 20, EMA 50, and ATR 14 overlays |
-| **GET** | `/api/market/trades` | No | `200 OK` | ~1.2 KB | Live trade tape with side, price, size, and timestamp |
-| **GET** | `/api/office/decisions` | No | `200 OK` | ~2.2 KB | Recent agent consensus, strategy thesis, risk approvals |
-| **GET** | `/api/office/agent-actions` | No | `200 OK` | ~32 KB | Full agent telemetry stream with multi-agent filters |
-| **GET** | `/api/events` | No | `200 OK` | ~12 KB | Realtime event bus pub/sub log buffer |
-| **POST** | `/api/token` | No | `200 OK` | ~0.3 KB | OAuth2 password flow issuing verified JWT access tokens |
-| **GET** | `/health` | No | `200 OK` | ~0.1 KB | Healthcheck endpoint reporting application state |
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/health` | 200, `trading_mode=PAPER` |
+| GET | `/` | 200 dashboard HTML. Watchlist and chart placeholders are "—" before quotes arrive. |
+| GET | `/api/market/quotes` | 200. Empty until the Delta poll succeeds, then marks with `source=delta`. No RELIANCE or NIFTY seeds. |
+| GET | `/api/market/candles?symbol=BTCUSDT&interval=5m` | 200, 576 candles, last price about 75,800. |
+| GET | `/api/market/candles?symbol=../../etc/passwd` | 400 |
+| GET | `/api/evaluation/status` | 200. Elapsed from the current session only. System stability is PENDING. |
+| POST | `/api/ollama/register` with a link-local URL | 400 |
+| POST | `/api/ollama/register` without `OLLAMA_BRIDGE_TOKEN` | 403 |
+| GET | `/api/office/agent-actions` | 200. Seed text "Max Drawdown (1.94%" and "Confluence score 82%" absent. |
 
----
+`/api/performance` and `/api/orders` are covered by `tests/test_dashboard_endpoints.py` when that file is run. It was not re-run in this pass because it calls public candle and trade hosts. The handlers still exclude historical CSV ledgers from today's P&L (`include_historical_ledgers=False` plus a UTC date prefix).
 
-## 2. Security & Validation Controls
-- **Input Validation**: Handled via Pydantic schemas enforcing strict typing, bounds checking, and schema compliance.
-- **Sanitization**: Path traversal protections applied to file downloads and report generation endpoints.
-- **Authentication**: JWT Bearer token authentication validated with HMAC-SHA256 signature verification.
-- **Error Handling**: Custom HTTP exception handlers return JSON errors without leaking backend stack traces.
+## Auth behavior
+
+`get_current_user` returns an admin principal when `AUTH_REQUIRED` is false, including when no token is sent. `require_admin` then allows the call. `render.yaml` sets `AUTH_REQUIRED=false`. Read endpoints used by the dashboard depend on that. Write endpoints do too, which is the open issue in the security report.
+
+When `AUTH_REQUIRED` is true, missing or bad bearer tokens get 401. That path is covered by `tests/test_security_audit_fixes.py`.
+
+## WebSocket
+
+`/ws/live-feed` checks a token only when `AUTH_REQUIRED` is true. Payload `positions_count` is the paper broker position length, cached about 5 seconds. It is no longer hardcoded to 0.
+
+## Third parties touched by these routes
+
+- Delta India public tickers and chart history for quotes and candles.
+- Binance public trades for `/api/market/trades` (different venue).
+- Optional Ollama tunnel, only after the bridge token check.
+- Broker credentials are not returned by `/health` in paper mode (`broker_client` is `PAPER_LOCAL`).
+
+## Not called in this audit
+
+Factory agent create/delete, skill execute, memory record, premarket prepare, analyze, batch debate, kill-switch POST, daemon start/stop/cycle, guardian emergency exit, and training triggers. They remain in the source. They were not fired, because several of them start work or change control state.

@@ -1,85 +1,57 @@
-# Autonomous AI Trader — Complete System Audit Report
+# Complete System Audit
 
-**Audit Date**: November 7, 2026  
-**Auditor**: Principal Systems Architect & Quantitative Systems Auditor  
-**Live Application**: [Autonomous AI Trader on Render](https://autonomous-ai-trader.onrender.com/)  
-**Evaluation Target**: 3-Day Live Evaluation Window (Nov 7 – Nov 10, 2026)  
-**Safety Protocol**: `LIVE_TRADING_ENABLED=false` (Strict Paper Execution)
+**Date:** 7 November 2026  
+**Scope:** Local repository, local API on `127.0.0.1`, and read-only inspection of configuration.  
+**Safety:** `LIVE_TRADING_ENABLED` stayed false. No live broker orders were sent. A short local paper process was started for verification and then stopped. Paper state files it touched were restored to the last committed copies.
 
----
+This is not a claim that every screen, endpoint, and production dependency is proven. Items below are what was inspected and what was changed.
 
-## 1. Executive Summary
+## Architecture in one pass
 
-A comprehensive, end-to-end audit was conducted across the Autonomous AI Trader codebase spanning Frontend (Vanilla JS + Lightweight Charts), Backend (FastAPI, asyncio background tasks), Database (SQLite / Async SQLAlchemy), Trading Engine (Delta Exchange Paper Broker, Quant Scanner, Multi-Factor Scoring), AI Agents (9-Agent Architecture with Cloud Groq LPU failover), and Infrastructure (Render 512MB RAM Linux container).
+- **UI:** `apps/dashboard/` (vanilla JS, Lightweight Charts). Served by FastAPI at `/`.
+- **API:** `apps/api/main.py` plus `apps/api/routers/`.
+- **Trading loop:** `apps/daemon/state_machine.py`, started once from the API lifespan.
+- **Paper execution:** `execution/broker_factory.py` forces `DeltaPaperBroker` or `PaperBroker` when live trading is off or mode is `PAPER`.
+- **Risk:** `risk/engine.py`, `risk/audit_gate.py`, `risk/kill_switch.py`.
+- **Database:** SQLite via async SQLAlchemy (`database/models/tables.py`). Render config in `render.yaml` does not provision Postgres.
+- **Deploy:** `render.yaml` web service, Docker runtime, health check `/health`, `TRADING_MODE=PAPER`, `LIVE_TRADING_ENABLED=false`, `EXCHANGE=DELTA`.
 
-### Key Findings:
-1. **Critical Out-Of-Memory (OOM) Crash on Render (RESOLVED)**: Eager import of PyTorch in `intelligence/kronos_service.py` consumed ~350MB RSS baseline. Combined with unthrottled concurrent market scans, this breached Render's 512MB limit, causing container termination (`Instance failed: nlntv`). Fixed via lazy model loading and concurrency bounding.
-2. **Evaluation Status 500 Error (RESOLVED)**: Missing `timedelta` import in `apps/api/main.py` caused `/api/evaluation/status` to throw `HTTP 500 Internal Server Error`, freezing the evaluation widget on the dashboard.
-3. **Historical Backtest Leak into Live KPIs (RESOLVED)**: `/api/performance` and `/api/orders` originally merged historical backtest ledgers (`PAPER_7DAY_TRADE_LEDGER.csv` and `order_audit_records.json`), displaying 156 closed trades, +$90.68 P&L, and 73.1% win rate instead of the fresh $6.00 live session. Fixed by strictly filtering live execution to the current UTC date.
-4. **Sub-Dollar Price Precision & Dynamic R:R (RESOLVED)**: Truncated price decimals caused target/stop-loss rounding collisions on sub-dollar crypto contracts (e.g. DOGE, SUI, ALT). Fixed by implementing dynamic decimal precision up to 8 places.
-5. **Test Suite Isolation (RESOLVED)**: Delta Paper Broker was auto-loading state from disk during pytest runs, causing 20 test failures due to state bleeding. Isolated disk persistence under test runners; all 90 tests now pass with 100% success.
+## Confirmed defects that were fixed
 
----
+| Severity | Defect | Fix |
+| --- | --- | --- |
+| Critical | API startup called `kill_switch.reset("API Cloud Daemon")`, which cleared an engaged halt. | Reset removed. Daemon startup logs that the switch was not cleared. |
+| Critical | Two trading loops could run `run_single_cycle` together (lifespan loop ignored stop, and `/api/daemon/start` could launch a second loop). | One task, one `asyncio.Lock` around each cycle. Start returns already-running when that task is alive. Stop cancels it. |
+| High | Agent loop published `APPROVED`, `PASSED`, and `ORDER_SUBMITTED` on a timer with a hardcoded BTC price and a fake 1.94% drawdown. | Loop now records observed quote, kill-switch, broker equity, and last cycle status. `ORDER_SUBMITTED` is used only when the last cycle reports a submitted order. |
+| High | `/api/ollama/register` fetched any caller-supplied URL (cloud metadata / private network). | Public http(s) only. Private, loopback, and link-local addresses rejected. Tunnel is used only when `OLLAMA_BRIDGE_TOKEN` matches. Status no longer returns the tunnel URL. |
+| High | Quote cache shipped fixed equity and crypto prices (NIFTY, RELIANCE, BTC 67,420.50). Dashboard HTML repeated those numbers and a 73% win rate. | Cache starts empty and fills from Delta. Placeholders are "—" until a live quote or candle arrives. Agent cards no longer state a win rate or a $1,000 balance. |
+| High | Evaluation clock reused `data/phase4_heartbeat.json` from an October soak and added 15 seconds per loop. Acceptance rows were marked PASS with no measurement. | Current clock is `data/live_session_heartbeat.json`, and only if the last heartbeat is under 3 minutes old. Stability and profit factor stay PENDING. |
+| Medium | Guardian closed trades were stamped with `now()`, so old exits counted as today. | Timestamp uses `completed_at`. |
+| Medium | Candle prices were rounded to 4 decimals. Sub-dollar contracts collided. | Decimal places follow price size, up to 8. |
+| Medium | Market symbol and candle interval were interpolated into outbound URLs. | Symbol and interval are allowlisted. Trade limit is capped at 100. |
+| Medium | Order and position quantity columns were integers. | Model columns are floats so fractional paper contracts are not truncated in Python. Existing SQLite files are not rewritten. |
+| Low | Markets table listed both `BTCUSD` and `BTCUSDT` for the same Delta mark. | Table shows `USDT` display symbols. |
 
-## 2. Component-by-Component Audit
+## What was verified
 
-### 2.1 Frontend (`apps/dashboard/`)
-- **Structure**: Single Page Application with dynamic theme, WebSockets, Lightweight Charts, and 8 modular views (`Overview`, `Markets`, `Trading`, `Agents`, `Analytics`, `Logs`, `Settings`).
-- **Data Integrity**: 10 distinct API pollers refresh every 1 to 5 seconds. All metrics bind directly to live endpoints (`/api/performance`, `/api/positions`, `/api/orders`, `/api/evaluation/status`, etc.).
-- **Chart Verification**: Candlestick chart dynamically pulls 1h and 5m candles with EMA 20, EMA 50, and ATR 14 overlays from Delta Exchange API.
-- **Responsiveness**: Flexible grid system verified across mobile, tablet, and desktop breakpoints.
+- `pytest tests/test_audit_repairs.py tests/test_security_audit_fixes.py`: 18 passed.
+- Valuation and risk modules (`test_valuation_and_risk_patch.py`, forensic regression, PnL mark reconciliation, mark-price gates, phase4a prelaunch, valuation defect reproduction): 49 passed.
+- Local API, with `EXCHANGE=DELTA` and live trading forced off for that process only:
+  - `/health` returned `PAPER`.
+  - `/api/market/quotes` returned Delta marks (BTC about 75,798, ETH about 2,232, SOL about 90, XRP about 1.185, DOGE about 0.073). Source field was `delta`.
+  - `/api/market/candles?symbol=BTCUSDT&interval=5m` returned 576 candles, last price about 75,800.
+  - Malformed candle symbol and `http://169.254.169.254/` registration returned HTTP 400.
+  - Evaluation elapsed time was a few seconds, not the old 6,249-second soak clock.
+- Browser on `http://127.0.0.1:8766/`: Overview and Markets rendered. Markets showed the Delta marks above, paper mode, and live trading disabled. Equity on that screen came from the paper broker.
 
-### 2.2 Backend & APIs (`apps/api/`)
-- **Framework**: FastAPI with asynchronous route handlers and lifespan management.
-- **Routers**:
-  - `/api/performance`: Portfolio equity, realized/unrealized P&L, win rate, profit factor, drawdown.
-  - `/api/positions`: Real-time broker positions with live mark-to-market prices.
-  - `/api/orders`: Active open orders and today's completed trades.
-  - `/api/evaluation/status`: Evaluation lifecycle, runtime elapsed, progress %, and pass/fail acceptance criteria.
-  - `/api/market/quotes` & `/api/market/candles`: Live Delta Exchange orderbook and OHLCV feed.
-  - `/api/office/decisions` & `/api/office/agent-actions`: Live agent thinking, collaborative actions, and multi-agent chat stream.
+## Not verified
 
-### 2.3 Database & Repositories (`database/`)
-- **Engine**: SQLite via SQLAlchemy `create_async_engine` with `aiosqlite`.
-- **Entities**: `TradeEntity`, `OrderEntity`, `PositionEntity`, `TradeJournalEntity`, `SystemEventEntity`.
-- **Integrity**: Foreign keys enforced. Transaction boundaries use asynchronous context managers (`async with AsyncSessionLocal() as session:`) with automatic rollback on unhandled exceptions.
+- The public Render URL was not redeployed. Production still runs the previous build until you deploy this commit.
+- Authenticated office, kill-switch, and daemon buttons were not clicked. Those routes stay open while `AUTH_REQUIRED=false`.
+- Full NSE scan, Angel One, Zerodha, and Fyers sessions were not exercised.
+- Postgres, Redis, and Telegram were not connected in this run.
+- A multi-day paper soak was not repeated.
 
-### 2.4 Trading Engine & Risk Management (`execution/`, `risk/`, `scanner/`)
-- **Broker Adapter**: `DeltaPaperBroker` simulates high-fidelity Delta Exchange execution with 0.05% slippage, 0.05% taker fees, contract multipliers, and automatic margin release.
-- **Risk Governance**:
-  - 14-Point Pre-Trade Soundness Gate.
-  - Strict 6.00% maximum portfolio drawdown circuit breaker.
-  - 1.00% daily loss hard shutdown.
-  - Dynamic leverage capped at 10x with margin safety checks.
-- **Dynamic Asset Universe**: Compounding capital tiering promotes higher-cap assets (ETH at $20, SOL/BTC at $50) as account equity increases from starting $6.00.
+## Residual risk
 
-### 2.5 AI Agent Office (`apps/api/office_service.py`)
-- **Roster**: 9 Specialized Autonomous Agents:
-  1. *Chief Investment Officer (CIO)*: Macro direction and capital allocation.
-  2. *Market Scanner Agent*: Real-time multi-asset technical screener.
-  3. *Quant Strategy Agent*: High-probability regime identification.
-  4. *Risk Governance Agent*: Mathematical gatekeeper enforcing drawdown limits.
-  5. *Execution & Sentinel Agent*: Protective order bracket armed on Delta Exchange.
-  6. *Trade Guardian Agent*: Microsecond thesis invalidation and trailing stops.
-  7. *Portfolio Monitoring Agent*: Mark-to-market equity reconciliation.
-  8. *Deep Research Agent*: Fundamental news sentiment harvester.
-  9. *Model Evolution Agent*: Continuous policy backtesting.
-- **LLM Failover**: Cloud Groq LPU (`llama-3.3-70b-versatile`, `gpt-oss-120b`) active with seamless fallback to Gemini.
-
----
-
-## 3. Test & Verification Matrix
-- **Test Suite**: 90 automated tests collected and executed.
-- **Passed**: 90 (100%)
-- **Failed**: 0
-- **Duration**: ~21 seconds
-- **Key Suites**:
-  - `test_valuation_and_risk_patch.py`: 14 tests verifying contract multipliers, mark prices, fee deductions, and drawdown breakers.
-  - `test_phase4e_runner_orchestration.py`: 8 tests verifying crash-recovery, event journaling, stop-loss triggers, and UTC rollover.
-  - `test_security_audit_fixes.py`: 6 tests verifying JWT authentication, emergency exits, path traversal rejection, and WebSocket security.
-  - `test_phase4c_e2e_isolated_validation.py`: 5 tests verifying complete order lifecycle.
-
----
-
-## 4. Conclusion & Go-Live Readiness
-The system is operating cleanly in paper trading mode (`LIVE_TRADING_ENABLED=false`). The 3-day evaluation window is running with all live metrics dynamically tracked from the starting capital of $6.00.
+See `PRODUCTION_READINESS_REPORT.md`. The largest remaining item is that mutating API routes are reachable without a password when `AUTH_REQUIRED` is false, which is the value in `render.yaml`.

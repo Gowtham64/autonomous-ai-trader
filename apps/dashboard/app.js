@@ -29,6 +29,13 @@ function getAuthToken() {
   return localStorage.getItem('ai_trader_token') || '';
 }
 
+function formatPx(price) {
+  const n = Number(price);
+  if (!Number.isFinite(n)) return '—';
+  const digits = n >= 100 ? 2 : n >= 1 ? 4 : 6;
+  return n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
 async function apiFetch(url, options = {}) {
   const token = getAuthToken();
   const headers = options.headers || {};
@@ -36,14 +43,19 @@ async function apiFetch(url, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
   options.headers = headers;
-  let resp = await fetch(url, options);
-  if (resp.status === 401 && token) {
+  options.credentials = 'same-origin';
+  const resp = await fetch(url, options);
+  if (resp.status === 401 && !window.location.pathname.startsWith('/login')) {
     localStorage.removeItem('ai_trader_token');
-    delete headers['Authorization'];
-    options.headers = headers;
-    resp = await fetch(url, options);
+    window.location.href = '/login';
   }
   return resp;
+}
+
+async function signOut() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  localStorage.removeItem('ai_trader_token');
+  window.location.href = '/login';
 }
 
 // 1. Clock Display (UTC)
@@ -341,7 +353,15 @@ async function loadCandles(symbol, interval) {
         const diffPct = prev > 0 ? (diff / prev) * 100 : 0.0;
 
         const livePriceEl = document.getElementById('chartLivePrice');
-        if (livePriceEl) livePriceEl.innerText = last.close.toLocaleString(undefined, { minimumFractionDigits: 2 });
+        if (livePriceEl) livePriceEl.innerText = formatPx(last.close);
+        const regimeEl = document.getElementById('regimeBadge');
+        if (regimeEl && last.ema20 && last.ema50) {
+          regimeEl.innerText = last.ema20 >= last.ema50 ? 'EMA20 ABOVE EMA50' : 'EMA20 BELOW EMA50';
+        }
+        const volEl = document.getElementById('regimeVolatility');
+        if (volEl && last.close > 0 && last.atr14) {
+          volEl.innerText = `${((last.atr14 / last.close) * 100).toFixed(2)}% ATR`;
+        }
         
         const liveChangeEl = document.getElementById('chartLiveChange');
         if (liveChangeEl) {
@@ -859,29 +879,40 @@ async function fetchMarketQuotes() {
         if (sym === 'DOGEUSDT' || sym === 'DOGE-USD') { priceId = 'watchPriceDOGE'; changeId = 'watchChangeDOGE'; }
 
         if (priceId && document.getElementById(priceId)) {
-          document.getElementById(priceId).innerText = price.toLocaleString(undefined, { minimumFractionDigits: 2 });
+          document.getElementById(priceId).innerText = formatPx(price);
         }
         if (changeId && document.getElementById(changeId)) {
           const el = document.getElementById(changeId);
           el.innerText = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
           el.className = change >= 0 ? 'text-green' : 'text-red';
         }
+        const spreadId = priceId ? priceId.replace('watchPrice', 'watchSpread') : '';
+        if (spreadId && document.getElementById(spreadId) && q.spread_pct !== undefined) {
+          document.getElementById(spreadId).innerText = `${Number(q.spread_pct).toFixed(3)}%`;
+        }
+        const pillId = priceId ? priceId.replace('watchPrice', 'pillChange') : '';
+        if (pillId && document.getElementById(pillId)) {
+          const pill = document.getElementById(pillId);
+          pill.innerText = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+          pill.className = change >= 0 ? 'text-green' : 'text-red';
+        }
       });
 
       // Populate Markets Tab
       const fullMarketsTbody = document.getElementById('fullMarketsTableBody');
-      if (fullMarketsTbody && cachedQuotes.length > 0) {
-        fullMarketsTbody.innerHTML = cachedQuotes.map(q => `
+      const displayQuotes = cachedQuotes.filter((q) => q.symbol.endsWith('USDT'));
+      if (fullMarketsTbody && displayQuotes.length > 0) {
+        fullMarketsTbody.innerHTML = displayQuotes.map(q => `
           <tr>
             <td><strong>${q.symbol}</strong></td>
             <td>Crypto Perpetual</td>
-            <td>$${(q.ltp || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            <td>${formatPx(q.ltp)}</td>
             <td class="${(q.change || 0) >= 0 ? 'text-green' : 'text-red'}">${(q.change || 0) >= 0 ? '+' : ''}${(q.change || 0).toFixed(2)}%</td>
-            <td>${q.spread_pct !== undefined ? q.spread_pct.toFixed(3) : '0.015'}%</td>
-            <td>${(q.volume || 1500000).toLocaleString()}</td>
-            <td>1.64%</td>
-            <td><span class="regime-badge">BULLISH</span></td>
-            <td><span class="status-dot green"></span> Active</td>
+            <td>${q.spread_pct !== undefined ? Number(q.spread_pct).toFixed(3) : '—'}%</td>
+            <td>${Number(q.volume || 0).toLocaleString()}</td>
+            <td>—</td>
+            <td><span class="regime-badge">${q.source === 'delta' ? 'LIVE' : 'UNCONFIRMED'}</span></td>
+            <td><span class="status-dot green"></span> ${q.source === 'delta' ? 'Live' : 'Pending'}</td>
           </tr>
         `).join('');
       }
@@ -1010,15 +1041,15 @@ function exportAuditCsv() {
 
 // 13. AI Agents Roster Render
 const CORE_AGENTS = [
-  { name: 'Market Scanner Agent', role: 'Scans markets & finds candidates', status: 'Active', live_task: 'Scanning BTC, ETH, SOL, XRP, DOGE order books' },
-  { name: 'Strategy Agent', role: 'Evaluates strategies & regimes', status: 'Active', live_task: 'Evaluating 20/50 EMA breakouts & Kronos model' },
-  { name: 'Risk Management Agent', role: 'Enforces limits & position sizing', status: 'Active', live_task: '14-Point Soundness Gate & Brackets Armed' },
-  { name: 'Execution Agent', role: 'Manages orders in paper mode', status: 'Active', live_task: 'Delta Exchange Paper Broker (0.05% slippage)' },
-  { name: 'Portfolio Agent', role: 'Tracks equity, P&L & drawdown', status: 'Active', live_task: 'MTM Drawdown & Balance Reconciled ($1,000)' },
-  { name: 'Market Regime Agent', role: 'Identifies volatility & market phases', status: 'Active', live_task: 'Bullish Regime (ATR 14: 1.64%, Trend Up)' },
-  { name: 'Expectancy Agent', role: 'Models mathematical edge', status: 'Active', live_task: 'Edge Verified: 73.0% Win Rate | 5.55 PF' },
-  { name: 'Position Sizing Agent', role: 'ATR volatility risk allocation', status: 'Active', live_task: 'Dynamic ATR Risk Sizing (1.0% Max Cap)' },
-  { name: 'Recovery Agent', role: 'Orphaned order & crash safety', status: 'Active', live_task: 'Heartbeat Verified: Zero Orphaned Orders' },
+  { name: 'Market Scanner Agent', role: 'Scans markets & finds candidates', status: 'Active', live_task: 'Reads the live quote cache. No setup is approved from this card.' },
+  { name: 'Strategy Agent', role: 'Evaluates strategies & regimes', status: 'Active', live_task: 'Reports the last trading-cycle status.' },
+  { name: 'Risk Management Agent', role: 'Enforces limits & position sizing', status: 'Active', live_task: 'Kill switch stays armed until a real breach or a manual halt.' },
+  { name: 'Execution Agent', role: 'Manages orders in paper mode', status: 'Active', live_task: 'Paper broker only. Live trading is disabled.' },
+  { name: 'Portfolio Agent', role: 'Tracks equity, P&L & drawdown', status: 'Active', live_task: 'Equity is read from the paper broker.' },
+  { name: 'Market Regime Agent', role: 'Identifies volatility & market phases', status: 'Active', live_task: 'Regime label is EMA20 versus EMA50 after candles load.' },
+  { name: 'Expectancy Agent', role: 'Models mathematical edge', status: 'Active', live_task: 'Win rate is calculated from today closed trades.' },
+  { name: 'Position Sizing Agent', role: 'ATR volatility risk allocation', status: 'Active', live_task: 'Size is computed inside a real cycle, not on this card.' },
+  { name: 'Recovery Agent', role: 'Orphaned order & crash safety', status: 'Active', live_task: 'One trading loop is allowed at a time.' },
 ];
 
 function renderAgentRosters() {
@@ -1075,7 +1106,7 @@ function initWebSocket() {
             if (sym === 'ETHUSDT' || sym === 'ETH-USD') priceId = 'watchPriceETH';
             if (sym === 'SOLUSDT' || sym === 'SOL-USD') priceId = 'watchPriceSOL';
             if (priceId && document.getElementById(priceId) && q.ltp) {
-              document.getElementById(priceId).innerText = q.ltp.toLocaleString(undefined, { minimumFractionDigits: 2 });
+              document.getElementById(priceId).innerText = formatPx(q.ltp);
             }
           });
         }
@@ -1094,6 +1125,8 @@ function initWebSocket() {
 
 // 15. App Bootstrap
 document.addEventListener('DOMContentLoaded', () => {
+  const signOutBtn = document.getElementById('signOutBtn');
+  if (signOutBtn) signOutBtn.addEventListener('click', signOut);
   updateUtcClock();
   setInterval(updateUtcClock, 1000);
 

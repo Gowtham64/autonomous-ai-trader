@@ -11,7 +11,7 @@ primary_region = "sin" # Singapore (low latency to Delta / Asian markets)
   TRADING_MODE = "PAPER"
   LIVE_TRADING_ENABLED = "false"
   EXCHANGE = "DELTA"
-  AUTH_REQUIRED = "false"
+  AUTH_REQUIRED = "true"
   PORT = "8000"
   LLM_PROVIDER = "groq"
 
