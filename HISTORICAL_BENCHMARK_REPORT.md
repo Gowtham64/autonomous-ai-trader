@@ -34,3 +34,4 @@ At the conclusion of the 7-day trial (November 13, 2026):
 2. **Compare Profit Factor**: If Profit Factor ≥ 1.50 (historical was 5.28), the risk-reward ratio is healthy.
 3. **Compare Max Drawdown**: If Max Drawdown stays under 6.00% (historical was 1.94%), capital preservation rules hold.
 4. **Action**: If all 3 gates pass, proceed with switching `TRADING_MODE=LIVE` and funding live exchange account.
+

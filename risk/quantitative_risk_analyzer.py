@@ -207,6 +207,7 @@ class QuantitativeRiskAnalyzer:
         side: str = "BUY",
         p_win_estimate: float = 0.55,
         fee_rate_roundtrip: float = 0.001,  # 0.10% total fee & slippage
+        contract_multiplier: float = 1.0,
     ) -> dict[str, Any]:
         """Calculates the rigorous mathematical expected value (EV) and Probability of Profit.
         
@@ -225,17 +226,18 @@ class QuantitativeRiskAnalyzer:
             }
 
         rr_ratio = reward_dist / stop_dist
-        notional = entry * quantity
+        eff_mult = contract_multiplier if (contract_multiplier is not None and contract_multiplier > 0) else 1.0
+        notional = entry * quantity * eff_mult
         fee_amount = notional * fee_rate_roundtrip
 
-        gain_on_win = (reward_dist * quantity) - fee_amount
-        loss_on_fail = (stop_dist * quantity) + fee_amount
+        gain_on_win = (reward_dist * quantity * eff_mult) - fee_amount
+        loss_on_fail = (stop_dist * quantity * eff_mult) + fee_amount
 
         # Mathematical EV = (p * Gain) - ((1 - p) * Loss)
         p = max(0.20, min(0.85, p_win_estimate))
         ev = (p * gain_on_win) - ((1.0 - p) * loss_on_fail)
 
-        is_viable = (rr_ratio >= 1.80) and (ev > 0.001)
+        is_viable = (rr_ratio >= 1.80) and (ev > 0.0001)
 
         return {
             "is_viable": is_viable,

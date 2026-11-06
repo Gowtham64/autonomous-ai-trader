@@ -1,4 +1,8 @@
-from datetime import UTC, datetime
+try:
+    from datetime import UTC, datetime
+except ImportError:
+    from datetime import datetime, timezone
+    UTC = timezone.utc
 
 from pydantic import BaseModel, Field
 
@@ -57,11 +61,12 @@ class AuditGate:
         if is_crypto:
             from portfolio.position_sizer import get_delta_contract_multiplier
             raw_mult = get_delta_contract_multiplier(signal.symbol)
-            contract_mult = raw_mult if (raw_mult is not None and raw_mult > 0) else 0.0
+            contract_mult = raw_mult if (raw_mult is not None and raw_mult > 0) else 1.0
             crypto_lev = getattr(settings, "DELTA_MAX_LEVERAGE", 5.0)
             trade_value = (quantity * (decision.entry_price or signal.ltp or 0.0) * contract_mult) / crypto_lev
             max_loss = stop_dist * quantity * contract_mult
         else:
+            contract_mult = 1.0
             trade_value = quantity * (decision.entry_price or signal.ltp or 0.0)
             max_loss = stop_dist * quantity
 
@@ -136,6 +141,7 @@ class AuditGate:
             side=decision.decision.value if hasattr(decision.decision, "value") else str(decision.decision),
             p_win_estimate=max(0.45, decision.confidence),
             fee_rate_roundtrip=0.001 if is_crypto else 0.0015,
+            contract_multiplier=contract_mult,
         )
 
         # Quantitative Liquidity & Market Impact Evaluation (LVaR) (Ch. 7.3)
@@ -165,9 +171,13 @@ class AuditGate:
 
         # Evaluate 16 Mandatory Questions
         from core.treasury.treasury import treasury
-        live_cap = max(10.0, float(treasury.current_capital or settings.INITIAL_CAPITAL))
-        allowed_max_loss = live_cap * max(0.025, settings.MAX_RISK_PER_TRADE_PCT * 2.0)
-        allowed_trade_value = max(10.0, live_cap * max(0.40, settings.MAX_SINGLE_STOCK_EXPOSURE_PCT))
+        live_cap = max(6.0, float(treasury.current_capital or settings.INITIAL_CAPITAL))
+        if is_crypto and live_cap < 25.0:
+            allowed_max_loss = max(0.50, live_cap * 0.08)
+            allowed_trade_value = max(6.0, live_cap * 0.50)
+        else:
+            allowed_max_loss = live_cap * max(0.025, settings.MAX_RISK_PER_TRADE_PCT * 2.0)
+            allowed_trade_value = max(10.0, live_cap * max(0.40, settings.MAX_SINGLE_STOCK_EXPOSURE_PCT))
 
         checklist = {
             "1_clear_thesis": bool(decision.thesis and len(decision.thesis) > 0),
@@ -179,7 +189,11 @@ class AuditGate:
             "7_max_loss_bounded": max_loss <= allowed_max_loss,
             "8_reward_risk_favorable": (rr_ratio >= settings.MIN_RISK_REWARD_RATIO) and friction_viable and math_eval["is_viable"],
             "9_capital_sized_properly": trade_value <= allowed_trade_value,
-            "10_liquidity_sufficient": (signal.avg_volume_20d > 1000) and (lvar_eval["market_impact_pct"] < 1.0) and (signal.relative_volume >= 0.05 or signal.avg_volume_20d > 50000),
+            "10_liquidity_sufficient": (
+                (signal.avg_volume_20d > 1000 or (is_crypto and signal.avg_volume_20d * (signal.ltp or 1.0) >= 5000.0))
+                and (lvar_eval["market_impact_pct"] < 1.0)
+                and (signal.relative_volume >= 0.05 or signal.avg_volume_20d > 50000)
+            ),
             "11_correlation_safe": trade_value <= allowed_trade_value,
             "12_events_accounted": bool(IndianMarketCalendar.get_holidays() is not None),
             "13_portfolio_limits_compliant": quantity > 0 and trade_value > 0,
@@ -190,6 +204,13 @@ class AuditGate:
 
         passed_count = sum(1 for v in checklist.values() if v)
         all_passed = (passed_count == 16) and (decision.decision in [TradeAction.BUY, TradeAction.SELL])
+        if not all_passed:
+            failed_keys = [k for k, v in checklist.items() if not v]
+            if decision.decision not in [TradeAction.BUY, TradeAction.SELL]:
+                failed_keys.append(f"decision_is_{decision.decision.value if hasattr(decision.decision, 'value') else decision.decision}")
+            logger.info(f"🛡️ [AuditGate Hold] {signal.symbol} held by risk checks: {failed_keys}")
+        else:
+            logger.info(f"🛡️ [AuditGate Pass] {signal.symbol} passed all 16 institutional safety checks!")
 
         agents_consulted = [r.agent_name for r in reports] + [
             "Bull Researcher", "Bear Researcher", "Debate Facilitator", "Chief Fund Manager"

@@ -1,5 +1,9 @@
 import json
-from datetime import UTC, datetime
+try:
+    from datetime import UTC, datetime
+except ImportError:
+    from datetime import datetime, timezone
+    UTC = timezone.utc
 from pathlib import Path
 
 from agents.facilitator.facilitator import AdversarialDebateDesk
@@ -220,6 +224,32 @@ class AutonomousTradingDaemon:
             if affordable_candidates:
                 candidates = affordable_candidates + [c for c in candidates if c.symbol not in {a.symbol for a in affordable_candidates}]
                 candidates = candidates[:n_candidates]
+
+        # For micro crypto accounts (< $25), ensure candidates include actionable contracts that fit margin safely
+        if is_crypto and available_margin > 0 and available_margin < 25.0:
+            from portfolio.position_sizer import get_delta_contract_multiplier
+            crypto_lev = getattr(settings, "DELTA_MAX_LEVERAGE", 5.0)
+            max_unit_margin = available_margin * 0.40  # e.g., max $2.40 margin per contract on $6 account
+            affordable_crypto = []
+            for c in candidates:
+                raw_mult = get_delta_contract_multiplier(c.symbol) or 1.0
+                unit_margin = (c.ltp * raw_mult) / crypto_lev
+                if unit_margin <= max_unit_margin:
+                    affordable_crypto.append(c)
+
+            # If top candidates are too expensive (BTC/ETH/SOL), scan the bootstrap micro universe
+            if len(affordable_crypto) < n_candidates:
+                from scanner.quant_scanner import DELTA_CRYPTO_BOOTSTRAP_UNIVERSE
+                bootstrap_cands = await self.scanner.scan_all_candidates(symbols=DELTA_CRYPTO_BOOTSTRAP_UNIVERSE)
+                for bc in bootstrap_cands:
+                    if bc.symbol not in {a.symbol for a in affordable_crypto}:
+                        raw_mult = get_delta_contract_multiplier(bc.symbol) or 1.0
+                        unit_margin = (bc.ltp * raw_mult) / crypto_lev
+                        if unit_margin <= max_unit_margin:
+                            affordable_crypto.append(bc)
+
+            if affordable_crypto:
+                candidates = affordable_crypto[:n_candidates]
 
         cycle_summary["candidates_scanned"] = len(candidates)
         logger.info(f"Scanner qualified {len(candidates)} candidates from universe: {[c.symbol for c in candidates]}")
