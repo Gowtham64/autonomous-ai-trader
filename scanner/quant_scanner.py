@@ -163,9 +163,9 @@ class QuantMarketScanner:
                         and float(t.get("turnover_usd") or 0.0) >= min_turnover_usd
                     ]
                     
-                    # Filter dynamically based on account capital (select all affordable crypto from entire market)
+                    # Filter dynamically based on compounding account capital
                     if available_capital is not None and available_capital > 0:
-                        max_unit_margin = min(available_capital * 0.45, available_capital - 0.50) if available_capital < 25.0 else available_capital
+                        max_unit_margin = min(available_capital * 0.45, available_capital - 0.50) if available_capital < 25.0 else min(available_capital * 0.40, available_capital - 1.0)
                         eligible = []
                         for t in operational:
                             sym = t.get("symbol", "")
@@ -176,17 +176,28 @@ class QuantMarketScanner:
                             mult = raw_mult if (raw_mult is not None and raw_mult > 0) else 1.0
                             unit_margin = (mark_price * mult) / crypto_lev
                             if 0 < unit_margin <= max_unit_margin:
-                                eligible.append(t)
+                                turnover = float(t.get("turnover_usd") or 0.0)
+                                is_pure_crypto = not any(sym.endswith(sfx) for sfx in ["BUSD", "XUSD", "ONUSD"])
+                                crypto_bonus = 20.0 if is_pure_crypto else 0.0
+                                # Compounding prioritization: higher-value assets fitting within current capital tier + turnover liquidity
+                                score = (unit_margin / max_unit_margin * 45.0) + min(35.0, (turnover / 1_000_000.0) * 10.0) + crypto_bonus
+                                t_copy = dict(t)
+                                t_copy["unit_margin"] = unit_margin
+                                t_copy["selection_score"] = score
+                                eligible.append(t_copy)
                         if eligible:
+                            eligible.sort(key=lambda x: x["selection_score"], reverse=True)
                             operational = eligible
+                    else:
+                        operational.sort(key=lambda t: float(t.get("turnover_usd") or 0.0), reverse=True)
 
-                    # Sort by 24h turnover descending so highest liquidity is scanned first
-                    operational.sort(key=lambda t: float(t.get("turnover_usd") or 0.0), reverse=True)
                     symbols = [t["symbol"] for t in operational[:max_symbols]]
                     if symbols:
+                        preview = [f"{t.get('symbol')}(${t.get('unit_margin', 0.0):.2f})" for t in operational[:min(6, len(operational))]]
                         logger.info(
-                            f"⚡ [Delta Complete Market Scanner] Evaluated full exchange ({len(data)} markets) -> "
-                            f"Selected {len(symbols)} liquid, affordable perpetuals for capital (${available_capital or 0.0:.2f})"
+                            f"⚡ [Delta Compounding Market Scanner] Capital ${available_capital or 0.0:.2f} "
+                            f"(Max Unit Margin: ${max_unit_margin if (available_capital and available_capital > 0) else 0.0:.2f}) -> "
+                            f"Selected {len(symbols)} high-value perpetuals: {preview}"
                         )
                         return symbols
         except Exception as e:
