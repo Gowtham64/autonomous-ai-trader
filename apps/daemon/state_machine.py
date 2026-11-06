@@ -552,8 +552,8 @@ class AutonomousTradingDaemon:
                 for a in guardian_actions
             ]
 
-        # 10. End-of-Session Memory Consolidation & Daily EOD Reporting (Only triggered post-market)
-        if phase == "POST_MARKET_CONSOLIDATION":
+        # 10. End-of-Session Memory Consolidation & Daily EOD Reporting (Only triggered for equities post-market)
+        if not is_crypto and phase == "POST_MARKET_CONSOLIDATION":
             memory_manager_agent.run_daily_consolidation(
                 market_regime="High Volatility Sideways",
                 completed_trades=trade_guardian.completed_reports,
@@ -568,6 +568,10 @@ class AutonomousTradingDaemon:
                 )
             except Exception as eod_err:
                 logger.debug(f"[State Machine] EOD reporting notice: {eod_err}")
+
+        # Explicit garbage collection to prevent memory accumulation across 24/7 cycles
+        import gc
+        gc.collect()
 
         self.current_state = TradingSessionState.REPORTING
         logger.info(f"=== COMPLETED MULTI-STOCK CYCLE: {cycle_summary} ===")

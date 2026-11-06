@@ -6,10 +6,8 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-import torch
 
 from core.logging import logger
-from intelligence.kronos import Kronos, KronosPredictor, KronosTokenizer
 
 
 @dataclass
@@ -86,16 +84,8 @@ class KronosForecastService:
         self.tokenizer_name = tokenizer_name
         self.max_context = max_context
         
-        # Select device: Metal (mps) for Mac, CUDA for Nvidia, or CPU
-        if device is None:
-            if torch.backends.mps.is_available():
-                self.device = "mps"
-            elif torch.cuda.is_available():
-                self.device = "cuda"
-            else:
-                self.device = "cpu"
-        else:
-            self.device = device
+        # Default device to cpu without importing torch at init time
+        self.device = device or "cpu"
 
         self.model = None
         self.tokenizer = None
@@ -115,6 +105,17 @@ class KronosForecastService:
         async with self._load_lock:
             if self._is_initialized:
                 return True
+
+            try:
+                import torch
+                from intelligence.kronos import Kronos, KronosPredictor, KronosTokenizer
+                if torch.backends.mps.is_available():
+                    self.device = "mps"
+                elif torch.cuda.is_available():
+                    self.device = "cuda"
+            except Exception as e:
+                logger.warning(f"⚠️ [Kronos Model] PyTorch not available or failed to import: {e}")
+                return False
 
             logger.info(f"⏳ [Kronos Foundation Model] Initializing {self.model_name} on {self.device.upper()}...")
             loop = asyncio.get_event_loop()

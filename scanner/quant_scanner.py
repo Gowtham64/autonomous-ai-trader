@@ -141,7 +141,7 @@ class QuantMarketScanner:
     async def get_live_delta_perpetuals(
         min_turnover_usd: float = 10000.0,
         available_capital: float | None = None,
-        max_symbols: int = 40,
+        max_symbols: int = 15,
     ) -> list[str]:
         """Dynamically fetches active liquid perpetual contracts directly from Delta Exchange API,
         filtered by account capital affordability and ranked by 24h market turnover.
@@ -375,7 +375,8 @@ class QuantMarketScanner:
             if live_symbols:
                 target_symbols = live_symbols
 
-        semaphore = asyncio.Semaphore(self.max_concurrency)
+        bounded_concurrency = min(self.max_concurrency, 4)
+        semaphore = asyncio.Semaphore(bounded_concurrency)
 
         async def _bounded_scan(sym: str) -> CandidateSignal | None:
             async with semaphore:
@@ -390,6 +391,10 @@ class QuantMarketScanner:
                 candidates.append(res)
             elif isinstance(res, Exception):
                 logger.debug(f"Scan exception on candidate: {res}")
+
+        # Explicit garbage collection to prevent memory spike on Render 512MB RAM
+        import gc
+        gc.collect()
 
         # Rank candidates by momentum score and relative volume descending
         candidates.sort(
