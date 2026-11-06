@@ -501,19 +501,35 @@ async def websocket_live_feed(websocket: WebSocket):
 _dynamic_ollama_bridge: dict[str, Any] = {
     "url": None,
     "last_heartbeat": 0.0,
+    "is_verified": False,
 }
 
 
 @app.post("/api/ollama/register")
 async def register_macbook_ollama(data: dict):
-    """Auto-registers a live MacBook Ollama tunnel endpoint."""
+    """Auto-registers a live MacBook Ollama tunnel endpoint after active reachability check."""
     import time
+    import httpx
     url = data.get("url")
     if url:
-        _dynamic_ollama_bridge["url"] = url.rstrip("/")
+        clean_url = url.rstrip("/")
+        _dynamic_ollama_bridge["url"] = clean_url
         _dynamic_ollama_bridge["last_heartbeat"] = time.time()
-        logger.info(f"🍏 [MacBook Bridge] Auto-registered Ollama at: {url}")
-        return {"status": "registered", "active_url": url}
+        
+        # Verify endpoint actively responds before routing AI traffic
+        try:
+            async with httpx.AsyncClient(timeout=2.5, headers={"User-Agent": "AutonomousTrader/1.0"}) as client:
+                r = await client.get(f"{clean_url}/api/tags")
+                _dynamic_ollama_bridge["is_verified"] = (r.status_code == 200)
+                if r.status_code != 200:
+                    logger.warning(f"🍏 [MacBook Bridge] Tunnel returned HTTP {r.status_code}. Routing Priority 1 to Cloud Groq/Gemini.")
+                else:
+                    logger.info(f"🍏 [MacBook Bridge] Verified active Ollama tunnel at: {clean_url}")
+        except Exception as e:
+            _dynamic_ollama_bridge["is_verified"] = False
+            logger.debug(f"🍏 [MacBook Bridge] Probe note: {e}")
+
+        return {"status": "registered", "active_url": clean_url, "verified": _dynamic_ollama_bridge["is_verified"]}
     return {"error": "Missing url"}
 
 
@@ -522,7 +538,7 @@ async def get_macbook_ollama_status():
     """Returns current active MacBook Ollama bridge status."""
     import time
     last = _dynamic_ollama_bridge["last_heartbeat"]
-    is_live = bool(last and (time.time() - last) < 90)
+    is_live = bool(last and (time.time() - last) < 90 and _dynamic_ollama_bridge.get("is_verified", False))
     return {
         "is_active": is_live,
         "url": _dynamic_ollama_bridge["url"] if is_live else None,

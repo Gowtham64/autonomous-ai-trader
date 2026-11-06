@@ -288,7 +288,8 @@ class LLMRouter:
         models_to_try: list[tuple[LLMProviderType, str, str | None]] = []
 
         last_hb = _dynamic_ollama_bridge.get("last_heartbeat", 0.0)
-        is_mac_live = bool(last_hb and (time.time() - last_hb) < 90)
+        is_verified = _dynamic_ollama_bridge.get("is_verified", False)
+        is_mac_live = bool(last_hb and (time.time() - last_hb) < 90 and is_verified)
         mac_tunnel_url = _dynamic_ollama_bridge.get("url")
 
         # 1. Ollama (Priority #1 if MacBook is awake and registered)
