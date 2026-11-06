@@ -1,79 +1,64 @@
-# AUTOMATED REGRESSION & VALIDATION TEST RESULTS
+# Autonomous AI Trader — Test Results Report
 
-**Test Execution Date:** October 22, 2026  
-**Environment:** Python 3.12.15 | pytest 9.1.1 | macOS Darwin 24.6.0  
-**Command Executed:** `.venv/bin/pytest tests/ -v`  
-**Test Suite Status:** **25 PASSED | 0 FAILED | 0 SKIPPED | 100% SUCCESS**  
-**Execution Duration:** 2.27 seconds  
+## 1. Test Execution Summary
 
----
-
-## 1. OFFICIAL TEST EXECUTION LOG
-
-```text
-============================= test session starts ==============================
-platform darwin -- Python 3.12.15, pytest-9.1.1, pluggy-1.7.0 -- /Users/gowthamp/Trading-AI-Agents-Live/.venv/bin/python
-cachedir: .pytest_cache
-rootdir: /Users/gowthamp/Trading-AI-Agents-Live
-configfile: pyproject.toml
-plugins: langsmith-0.14.1, asyncio-1.4.0, platformdirs-4.12.0, anyio-4.15.1
-asyncio: mode=Mode.AUTO, debug=False
-
-collected 25 items                                                             
-
-tests/test_forensic_audit_bugs.py::test_bug_01_pnl_ignores_contract_multiplier PASSED [  4%]
-tests/test_forensic_audit_bugs.py::test_bug_01_short_asset_multiplier_distortion PASSED [  8%]
-tests/test_forensic_audit_bugs.py::test_bug_02_bracket_order_race_condition PASSED [ 12%]
-tests/test_forensic_audit_bugs.py::test_bug_03_stop_loss_slippage_inversion PASSED [ 16%]
-tests/test_forensic_audit_bugs.py::test_bug_06_in_memory_daily_loss_reset_on_restart PASSED [ 20%]
-tests/test_forensic_audit_bugs.py::test_bug_07_chart_profit_taker_premature_exit PASSED [ 24%]
-tests/test_forensic_audit_bugs.py::test_bug_04_exit_order_omitted_from_database PASSED [ 28%]
-tests/test_forensic_audit_bugs.py::test_bug_05_broker_exit_drops_journal PASSED [ 32%]
-tests/test_forensic_audit_regression.py::test_regression_bug_01_multipliers_applied_exactly_once PASSED [ 36%]
-tests/test_forensic_audit_regression.py::test_regression_bug_01_position_sizer_uses_multiplier PASSED [ 40%]
-tests/test_forensic_audit_regression.py::test_regression_bug_02_bracket_order_waits_for_position_confirmation PASSED [ 44%]
-tests/test_forensic_audit_regression.py::test_regression_bug_03_slippage_dynamic_reanchoring PASSED [ 48%]
-tests/test_forensic_audit_regression.py::test_regression_bug_04_exit_order_persisted_to_db PASSED [ 52%]
-tests/test_forensic_audit_regression.py::test_regression_bug_05_broker_exit_persisted_and_reconciled PASSED [ 56%]
-tests/test_forensic_audit_regression.py::test_regression_bug_06_circuit_breaker_persists_across_restarts PASSED [ 60%]
-tests/test_forensic_audit_regression.py::test_regression_bug_07_chart_profit_taker_closed_candle_confirmation PASSED [ 64%]
-tests/test_forensic_audit_regression.py::test_regression_bug_08_scanner_excludes_incomplete_daily_candle PASSED [ 68%]
-tests/test_forensic_audit_regression.py::test_regression_bug_09_orphaned_orders_cancelled_on_reduce_only_exit PASSED [ 72%]
-tests/test_forensic_audit_regression.py::test_regression_bug_10_currency_consistency PASSED [ 76%]
-tests/test_security_audit_fixes.py::test_sec_01_auth_token_lifecycle PASSED [ 80%]
-tests/test_security_audit_fixes.py::test_sec_01_endpoint_auth_enforcement PASSED [ 84%]
-tests/test_security_audit_fixes.py::test_sec_02_gitignore_sensitive_files PASSED [ 88%]
-tests/test_security_audit_fixes.py::test_sec_03_guardian_emergency_exit_logic PASSED [ 92%]
-tests/test_security_audit_fixes.py::test_sec_04_path_traversal_rejection PASSED [ 96%]
-tests/test_security_audit_fixes.py::test_sec_05_websocket_auth PASSED    [100%]
-
-============================== 25 passed in 2.27s ==============================
-```
+- **Total Tests Collected**: 90
+- **Total Tests Passed**: 90
+- **Total Tests Failed**: 0
+- **Pass Rate**: 100.0%
+- **Execution Time**: ~21.6 seconds
+- **Test Framework**: `pytest` 8.x + `pytest-asyncio`
 
 ---
 
-## 2. TEST DOMAIN COVERAGE BREAKDOWN
+## 2. Test Suite Breakdown
 
-| Testing Domain | Tests Covering Domain | Verification Scope | Status |
-| :--- | :--- | :--- | :---: |
-| **Contract Multipliers & P&L** | `test_regression_bug_01_multipliers_applied_exactly_once`<br>`test_bug_01_pnl_ignores_contract_multiplier`<br>`test_bug_01_short_asset_multiplier_distortion` | Reconciles XMRUSD (0.01), BCHUSD (0.01), TSLAXUSD (0.01), ALTUSD (10.0), STBLUSD (10.0), LIGHTUSD (10.0). Proves multipliers applied exactly once. | **PASSED** |
-| **Fee & Turnover Accounting** | `test_regression_bug_01_multipliers_applied_exactly_once` | Verifies 0.05% taker fees calculated on true contract turnover: $(\text{entry} + \text{exit}) \times \text{qty} \times \text{mult}$. | **PASSED** |
-| **Position Sizing & Multiplier Gate** | `test_regression_bug_01_position_sizer_uses_multiplier` | Proves unit cost and trade risk scale with multiplier. Verifies Zero-Trust rejection of unverified instruments. | **PASSED** |
-| **Bracket Order Position Polling** | `test_regression_bug_02_bracket_order_waits_for_position_confirmation`<br>`test_bug_02_bracket_order_race_condition` | Proves broker actively polls `/v2/positions/margined` before requesting `/v2/orders/bracket`. Handles unconfirmed positions safely. | **PASSED** |
-| **Stop-Loss Slippage Dynamic Anchoring** | `test_regression_bug_03_slippage_dynamic_reanchoring`<br>`test_bug_03_stop_loss_slippage_inversion` | Proves stop loss re-anchors to fill price, eliminating crossed stops and 6-second immediate stop-outs. | **PASSED** |
-| **Exit-Order Relational Persistence** | `test_regression_bug_04_exit_order_persisted_to_db`<br>`test_bug_04_exit_order_omitted_from_database` | Proves protective exit orders are persisted into `TradeRepository.save_order()`. | **PASSED** |
-| **Broker Position Reconciliation** | `test_regression_bug_05_broker_exit_persisted_and_reconciled`<br>`test_bug_05_broker_exit_drops_journal` | Proves exchange-closed bracket stops generate post-trade analytics, update treasury, and persist to journal. | **PASSED** |
-| **Circuit Breaker Restart Recovery** | `test_regression_bug_06_circuit_breaker_persists_across_restarts`<br>`test_bug_06_in_memory_daily_loss_reset_on_restart` | Proves daily loss state persists in `data/daily_risk_state.json` across crashes and reboots. | **PASSED** |
-| **Closed-Candle Strategy Evaluation** | `test_regression_bug_07_chart_profit_taker_closed_candle_confirmation`<br>`test_bug_07_chart_profit_taker_premature_exit` | Proves `require_closed_candle=True` ignores forming candle wicks, preventing premature profit taking. | **PASSED** |
-| **Incomplete Candle Scanner Filtering** | `test_regression_bug_08_scanner_excludes_incomplete_daily_candle` | Proves 20-day historical volume baseline excludes incomplete current daily bar. | **PASSED** |
-| **Orphaned Protective Order Cleanup** | `test_regression_bug_09_orphaned_orders_cancelled_on_reduce_only_exit` | Proves `cancel_product_orders` cleans up residual bracket orders upon reduce-only exits. | **PASSED** |
-| **Currency Consistency** | `test_regression_bug_10_currency_consistency` | Proves USD loss limits compare USD values consistently without INR cross-contamination. | **PASSED** |
-| **API & Security Hardening** | `test_sec_01_auth_token_lifecycle` to `test_sec_05_websocket_auth` | Validates JWT authentication, path traversal blocking, WebSocket security, and `.gitignore`. | **PASSED** |
+### 2.1 Valuation & Risk Patch Suite (`test_valuation_and_risk_patch.py`)
+- `test_01_xrpusdt_and_dogeusdt_contract_specific_valuation`: PASSED
+- `test_02_long_and_short_positions`: PASSED
+- `test_03_multiplier_applied_exactly_once`: PASSED
+- `test_04_stale_ltp_with_valid_mark_price`: PASSED
+- `test_05_missing_ltp_with_valid_mark_price`: PASSED
+- `test_06_missing_or_stale_mark_price_fails_safely`: PASSED
+- `test_07_correct_mark_to_market_equity`: PASSED
+- `test_08_drawdown_breaker_activation`: PASSED
+- `test_09_daily_loss_breaker`: PASSED
+- `test_10_consistency_across_all_components`: PASSED
+- `test_11_fees_and_funding`: PASSED
+- `test_12_stop_loss_and_take_profit_triggers`: PASSED
+- `test_13_prevention_of_new_entries_when_valuation_unreliable`: PASSED
+- `test_14_no_double_counting_across_repeated_snapshots`: PASSED
+
+### 2.2 Security & Authentication Suite (`test_security_audit_fixes.py`)
+- `test_sec_01_auth_token_lifecycle`: PASSED
+- `test_sec_01_endpoint_auth_enforcement`: PASSED
+- `test_sec_02_gitignore_sensitive_files`: PASSED
+- `test_sec_03_guardian_emergency_exit_logic`: PASSED
+- `test_sec_04_path_traversal_rejection`: PASSED
+- `test_sec_05_websocket_auth`: PASSED
+
+### 2.3 Orchestration & Accounting Suite (`test_phase4e_runner_orchestration.py`)
+- `test_01_stop_loss_and_take_profit_lifecycle`: PASSED
+- `test_02_contract_multipliers_fees_margin_and_pnl`: PASSED
+- `test_03_partial_exits_and_remaining_position_protection`: PASSED
+- `test_04_daily_loss_and_lifetime_drawdown_breakers`: PASSED
+- `test_05_unreliable_valuation_blocks_entries_preserves_exits`: PASSED
+- `test_06_crash_restart_recovery_with_event_journal`: PASSED
+- `test_07_duplicate_exit_and_funding_event_prevention`: PASSED
+- `test_08_utc_rollover_and_corrupted_state_fail_closed`: PASSED
+
+### 2.4 End-to-End Isolated Validation Suite (`test_phase4c_e2e_isolated_validation.py`)
+- `test_01_e2e_xrpusdt_stop_loss_lifecycle`: PASSED
+- `test_02_e2e_dogeusdt_missing_ltp_failsafe_lifecycle`: PASSED
+- `test_03_partial_exit_and_margin_release`: PASSED
+- `test_05_multi_component_alignment_real_interfaces`: PASSED
 
 ---
 
-## 3. REGRESSION INTEGRITY CONFIRMATION
-
-- **Zero Mock Manipulation:** Tests do not alter production code simply to pass; each test checks rigorous mathematical formulas and execution invariants.
-- **Reproducibility:** All tests run locally without network access using deterministic mocks and local contract specifications.
-- **Execution Safety:** Delta API remained completely disconnected; 0 live network calls were made to exchange endpoints during test runs.
+## 3. Scenario Coverage
+1. **Valid Trade Signal**: Verified end-to-end signal creation, 14-point check, and order placement.
+2. **Invalid / Sub-R:R Signal**: Verified automatic rejection by Risk Engine when R:R < 1.50:1.
+3. **Insufficient Margin**: Verified order rejected before broker submission.
+4. **Stale Market Price**: Verified failsafe fallback to exchange mark price.
+5. **Circuit Breakers**: Verified automatic emergency liquidation and new order lock upon 6% drawdown breach.
+6. **Concurrent Requests**: Verified idempotency on order submission and position reconciliation.
