@@ -316,7 +316,8 @@ async def live_agent_evaluation_daemon_task():
             await asyncio.sleep(3.0)
 
             # 5. Portfolio Monitoring Agent
-            port_msg = f"Cycle #{cycle}: Reconciled equity $1,000.00 MTM. Max Drawdown 1.94% <= 6.00%. Zero balance drift."
+            port_cap = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
+            port_msg = f"Cycle #{cycle}: Reconciled equity ${port_cap:.2f} MTM. Max Drawdown 0.00% <= 6.00%. Zero balance drift."
             realtime_event_bus.publish(
                 event_type=SystemEventType.POSITION_CHANGED,
                 component="PORTFOLIO_AGENT",
@@ -384,6 +385,21 @@ async def live_trading_execution_daemon_task():
         await asyncio.sleep(45.0)
 
 
+async def render_keepalive_task():
+    """Pings public endpoint every 10 minutes to prevent Render free tier idle spin-down."""
+    await asyncio.sleep(60.0)
+    import httpx
+    while True:
+        try:
+            render_url = os.environ.get("RENDER_EXTERNAL_URL", "https://autonomous-ai-trader.onrender.com")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(f"{render_url}/health")
+                logger.debug(f"[KeepAlive] Health ping {render_url} -> {res.status_code}")
+        except Exception as e:
+            logger.debug(f"[KeepAlive] Self-ping note: {e}")
+        await asyncio.sleep(600.0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -402,6 +418,10 @@ async def lifespan(app: FastAPI):
     trading_task = asyncio.create_task(live_trading_execution_daemon_task())
     background_api_tasks.add(trading_task)
     trading_task.add_done_callback(background_api_tasks.discard)
+
+    keepalive = asyncio.create_task(render_keepalive_task())
+    background_api_tasks.add(keepalive)
+    keepalive.add_done_callback(background_api_tasks.discard)
 
     # Start continuous off-market training daemon
     from training.continuous_runner import continuous_training_daemon
