@@ -107,7 +107,7 @@ async def update_real_quotes_task():
                             quotes = t.get("quotes") or {}
                             best_bid = float(quotes.get("best_bid") or mark)
                             best_ask = float(quotes.get("best_ask") or mark)
-                            spread = round(((best_ask - best_bid) / mark) * 100, 4) if mark > 0 else 0.015
+                            spread = round(((best_ask - best_bid) / mark) * 100, 4) if mark > 0 else None
 
                             for sym in (disp_sym, d_sym):
                                 found = False
@@ -946,35 +946,35 @@ async def get_market_trades(symbol: str = "BTCUSDT", limit: int = 30):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     limit = clamp_limit(limit, default=30, maximum=100)
     try:
-        binance_sym = symbol.replace("-", "").upper()
-        if not binance_sym.endswith("USDT") and not binance_sym.endswith("USD"):
-            binance_sym += "USDT"
-        elif binance_sym.endswith("USD") and not binance_sym.endswith("USDT"):
-            binance_sym += "T"
-
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get(
-                "https://api.binance.com/api/v3/trades",
-                params={"symbol": binance_sym, "limit": limit},
-            )
+        delta_symbol = normalize_market_symbol(symbol.replace("USDT", "USD").replace("-USD", "USD"))
+        async with httpx.AsyncClient(timeout=3.5) as client:
+            r = await client.get(f"https://api.india.delta.exchange/v2/trades/{delta_symbol}")
             if r.status_code == 200:
-                raw_trades = r.json()
-                trades = [
-                    {
-                        "trade_id": str(tr.get("id")),
-                        "symbol": symbol,
-                        "price": float(tr.get("price", 0.0)),
-                        "quantity": float(tr.get("qty", 0.0)),
-                        "side": "SELL" if tr.get("isBuyerMaker") else "BUY",
-                        "time": datetime.fromtimestamp(tr.get("time", 0) / 1000, tz=UTC).strftime("%H:%M:%S"),
-                        "timestamp_ms": tr.get("time"),
-                    }
-                    for tr in raw_trades
-                ]
-                return {"symbol": symbol, "trades": trades}
+                raw_trades = (r.json().get("result") or [])[:limit]
+                trades = []
+                for tr in raw_trades:
+                    raw_ts = int(tr.get("timestamp") or 0)
+                    if raw_ts > 10_000_000_000_000:
+                        seconds = raw_ts / 1_000_000
+                    elif raw_ts > 10_000_000_000:
+                        seconds = raw_ts / 1_000
+                    else:
+                        seconds = raw_ts
+                    buyer = str(tr.get("buyer_role") or "")
+                    trades.append({
+                        "trade_id": str(raw_ts),
+                        "symbol": tr.get("symbol") or delta_symbol,
+                        "price": float(tr.get("price") or 0.0),
+                        "quantity": float(tr.get("size") or 0.0),
+                        "side": "BUY" if buyer == "taker" else "SELL",
+                        "time": datetime.fromtimestamp(seconds, tz=UTC).strftime("%H:%M:%S") if seconds else "—",
+                        "timestamp_ms": int(seconds * 1000) if seconds else 0,
+                        "source": "delta",
+                    })
+                return {"symbol": delta_symbol, "trades": trades, "source": "delta"}
     except Exception as e:
         logger.debug(f"Public market trades fetch note: {e}")
-    return {"symbol": symbol, "trades": []}
+    return {"symbol": symbol, "trades": [], "source": "delta"}
 
 
 @app.get("/api/market/candles")
@@ -2157,40 +2157,28 @@ async def get_agent_actions(agent_filter: str | None = None, limit: int = 150):
 
         t_str = d.created_at.isoformat() if hasattr(d.created_at, "isoformat") else str(d.created_at)
 
-        # Scanner Agent
-        actions.append({
-            "timestamp": t_str,
-            "agent": "Market Scanner Agent",
-            "role": "Scans markets & finds candidates",
-            "symbol": d.symbol,
-            "action": "Flagged Momentum Setup",
-            "status": "DETECTED",
-            "summary": f"Detected {d.symbol} passing 20/50 EMA trend and RSI momentum filters.",
-            "details": f"Confidence: {round((d.confidence or 0.75) * 100, 1)}%. Target Entry: ${d.entry_price or 0.0}.",
-        })
-
-        # Strategy Agent
+        stored_bits = []
+        if thesis:
+            stored_bits.append(thesis[0])
+        if d.entry_price:
+            stored_bits.append(f"Entry ${d.entry_price}")
+        if d.stop_loss:
+            stored_bits.append(f"Stop ${d.stop_loss}")
+        if d.target_1:
+            stored_bits.append(f"Target ${d.target_1}")
+        if d.expected_risk_reward:
+            stored_bits.append(f"R:R {d.expected_risk_reward}")
+        if invalidation:
+            stored_bits.append(f"Invalidation: {invalidation[0]}")
         actions.append({
             "timestamp": t_str,
             "agent": "Strategy Agent",
-            "role": "Evaluates strategies & regimes",
+            "role": "Stored trade decision",
             "symbol": d.symbol,
-            "action": f"Formulated {d.decision} Thesis",
-            "status": "APPROVED",
-            "summary": thesis[0] if thesis else f"Systematic multi-factor alignment for {d.symbol}.",
-            "details": thesis[1] if len(thesis) > 1 else (thesis[0] if thesis else "Bullish momentum trajectory verified."),
-        })
-
-        # Risk Management Agent
-        actions.append({
-            "timestamp": t_str,
-            "agent": "Risk Management Agent",
-            "role": "Enforces limits & position sizing",
-            "symbol": d.symbol,
-            "action": "Enforced 14-Point Soundness Gate",
-            "status": "PASSED",
-            "summary": f"SL anchored at ${d.stop_loss} | TP target at ${d.target_1} | Expected R:R: {d.expected_risk_reward or 1.5}:1.",
-            "details": f"Invalidation Rule: {invalidation[0] if invalidation else 'Hard stop breach on 15m candle'}.",
+            "action": f"Recorded {d.decision or 'DECISION'}",
+            "status": d.decision or "RECORDED",
+            "summary": thesis[0] if thesis else f"{d.decision or 'Decision'} for {d.symbol}. No thesis text was stored.",
+            "details": " | ".join(stored_bits[1:]) if len(stored_bits) > 1 else "No extra evidence stored.",
         })
 
     # 2. Execution Agent Actions from order audit records

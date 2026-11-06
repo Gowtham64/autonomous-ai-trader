@@ -1251,24 +1251,12 @@ class AIOfficeService:
         clean_msg = message.strip().lower()
         agent.last_active = datetime.now(UTC).strftime("%H:%M:%S")
 
-        if "what are you analyzing" in clean_msg or "what are you doing" in clean_msg:
-            reply = f"I am currently {agent.current_activity}. My primary focus is on {', '.join(agent.monitored_symbols[:4])} under mission '{agent.current_mission}'."
-            evidence = [f"Status: {agent.status}", f"Confidence: {int(agent.confidence_score * 100)}%", f"Metrics: {agent.metrics}"]
-
-        elif "evidence" in clean_msg or "data" in clean_msg:
-            reply = f"Here is my quantitative evidence package for {agent.name}:\n"
-            reply += f"• Responsibilities: {', '.join(agent.responsibilities[:3])}\n"
-            reply += f"• Live Telemetry: {agent.metrics}\n"
-            reply += f"• Safety Controls: {'Absolute VETO enabled' if agent.has_veto_power else 'Standard Gated'}"
-            evidence = [f"{k}: {v}" for k, v in agent.metrics.items()]
-
-        elif "memory" in clean_msg:
-            reply = f"I have {agent.memory_count} persistent memory records indexed in 3-tier organizational storage. Latest observation: '{agent.thought_bubble}' recorded at {agent.last_active} UTC."
-            evidence = [f"Memory Records: {agent.memory_count} entries", f"Department: {agent.department}"]
-
-        else:
-            reply = f"Greetings. As {agent.name} ({agent.role}), I am operating within {agent.department}. {agent.thought_bubble}. Let me know if you require specific indicator calculations, live function executions, or risk verifications."
-            evidence = [f"Role: {agent.role}", f"Confidence: {int(agent.confidence_score * 100)}%"]
+        reply = (
+            f"{agent.name} has no live chat model. "
+            "Prices on the desk come from Delta Exchange. "
+            "Trade notes appear only when a decision is stored."
+        )
+        evidence = []
 
         self.add_live_event(agent.name, agent.department, f"User inquiry: '{message[:40]}...' → Responded.", "CHAT")
 
@@ -1804,19 +1792,22 @@ class AIOfficeService:
             "department": agent.department if agent else "Trading Desk",
             "avatar": agent.avatar_icon if agent else "👔",
             "status": agent.status if agent else "RUNNING",
-            "confidence": f"{int((agent.confidence_score if agent else 0.95) * 100)}%",
+            "confidence": "—",
             "active_target": {
-                "symbol": profile["active_symbol"],
-                "ltp": profile["ltp"],
-                "timeframe": "15m Intraday",
-                "mission": agent.current_mission if agent else "Alpha Discovery & Capital Growth"
+                "symbol": "—",
+                "ltp": "—",
+                "timeframe": "—",
+                "mission": "No live calculation is stored for this agent."
             },
-            "operation_at_this_moment": profile["operation"],
-            "current_reasoning": profile["reasoning"],
-            "recommendation": profile["recommendation"],
-            "live_metrics": profile["live_metrics"],
-            "recent_actions": profile["recent_actions"],
-            "executable_tools": profile["executable_tools"],
+            "operation_at_this_moment": "No live calculation is stored for this agent.",
+            "current_reasoning": "No live calculation is stored for this agent.",
+            "recommendation": {},
+            "live_metrics": {},
+            "recent_actions": [],
+            "executable_tools": [
+                {"name": fn.name, "label": fn.display_name, "desc": fn.description}
+                for fn in (agent.executable_functions if agent else [])
+            ],
             "timestamp": datetime.now(UTC).strftime("%H:%M:%S UTC")
         }
 

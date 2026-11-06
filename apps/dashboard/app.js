@@ -660,11 +660,16 @@ function renderAgentChatStream() {
   }
 
   container.innerHTML = filtered.slice(0, 40).map((d, idx) => {
-    const thesisText = Array.isArray(d.thesis) ? d.thesis.join(' ') : (d.thesis || 'Systematic Multi-Factor Signal.');
-    const supportingText = Array.isArray(d.supporting_evidence) ? d.supporting_evidence.join('; ') : (d.supporting_evidence || 'Technical indicator filters passed.');
-    const opposingText = Array.isArray(d.opposing_evidence) ? d.opposing_evidence.join('; ') : (d.opposing_evidence || 'Market volatility risk considered.');
-    const invalidationText = Array.isArray(d.invalidation_conditions) ? d.invalidation_conditions.join('; ') : (d.invalidation_conditions || 'Hard stop price breach.');
-    const sideColor = d.decision === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)';
+    const joinText = (value) => Array.isArray(value) ? value.filter(Boolean).join(' ') : (value || '');
+    const thesisText = joinText(d.thesis);
+    const supportingText = joinText(d.supporting_evidence);
+    const opposingText = joinText(d.opposing_evidence);
+    const invalidationText = joinText(d.invalidation_conditions);
+    const priceBits = [];
+    if (d.entry_price) priceBits.push(`Entry $${d.entry_price}`);
+    if (d.stop_loss) priceBits.push(`Stop $${d.stop_loss}`);
+    if (d.target_1) priceBits.push(`Target $${d.target_1}`);
+    const priceText = priceBits.join(' | ');
 
     return `
       <div style="background:var(--bg-card-inset); border:1px solid var(--border-subtle); border-radius:6px; padding:12px;">
@@ -672,8 +677,8 @@ function renderAgentChatStream() {
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-weight:700; color:#fff; font-size:13px;">${d.symbol}</span>
             <span class="activity-tag ${d.decision === 'BUY' ? 'info' : 'reject'}" style="font-weight:700;">${d.decision}</span>
-            <span style="font-size:11px; color:var(--text-dim);">Confidence: ${(d.confidence * 100).toFixed(0)}%</span>
-            <span style="font-size:11px; color:var(--text-dim);">R:R: ${d.expected_risk_reward || 1.5}:1</span>
+            <span style="font-size:11px; color:var(--text-dim);">${d.confidence ? `Confidence: ${(d.confidence * 100).toFixed(0)}%` : 'Confidence: —'}</span>
+            <span style="font-size:11px; color:var(--text-dim);">${d.expected_risk_reward ? `R:R: ${d.expected_risk_reward}:1` : ''}</span>
           </div>
           <span style="font-size:11px; color:var(--text-dim); font-family:monospace;">${d.created_at || '—'}</span>
         </div>
@@ -681,25 +686,11 @@ function renderAgentChatStream() {
         <!-- Agent Multi-Voice Debate Dialogue -->
         <div style="display:flex; flex-direction:column; gap:6px; font-size:11.5px; line-height:1.45;">
           
-          <div style="display:flex; gap:6px;">
-            <span style="color:var(--accent-cyan); font-weight:600; min-width:130px;">🔍 Market Scanner:</span>
-            <span style="color:var(--text-main);">Candidate detected with RSI momentum alignment & 20/50 EMA trend breakout.</span>
-          </div>
-
-          <div style="display:flex; gap:6px;">
-            <span style="color:var(--accent-green); font-weight:600; min-width:130px;">📈 Strategy Agent:</span>
-            <span style="color:var(--text-main);">${thesisText}</span>
-          </div>
-
-          <div style="display:flex; gap:6px;">
-            <span style="color:#a855f7; font-weight:600; min-width:130px;">🛡 Risk Agent:</span>
-            <span style="color:var(--text-main);">Entry: $${d.entry_price || 0} | SL: $${d.stop_loss || 0} | TP: $${d.target_1 || 0}. Invalidation: ${invalidationText}</span>
-          </div>
-
-          <div style="display:flex; gap:6px;">
-            <span style="color:var(--accent-cyan); font-weight:600; min-width:130px;">⚡ Execution Agent:</span>
-            <span style="color:var(--text-dim);">Routed to Delta Paper Gateway with adverse slippage model (0.05%) & 14-Point Pre-Trade Gate PASSED.</span>
-          </div>
+          ${thesisText ? `<div style="display:flex; gap:6px;"><span style="color:var(--accent-green); font-weight:600; min-width:130px;">Thesis:</span><span style="color:var(--text-main);">${thesisText}</span></div>` : `<div style="color:var(--text-dim);">No thesis stored for this decision.</div>`}
+          ${supportingText ? `<div style="display:flex; gap:6px;"><span style="font-weight:600; min-width:130px;">Supporting:</span><span>${supportingText}</span></div>` : ''}
+          ${opposingText ? `<div style="display:flex; gap:6px;"><span style="font-weight:600; min-width:130px;">Opposing:</span><span>${opposingText}</span></div>` : ''}
+          ${priceText ? `<div style="display:flex; gap:6px;"><span style="font-weight:600; min-width:130px;">Prices:</span><span>${priceText}</span></div>` : ''}
+          ${invalidationText ? `<div style="display:flex; gap:6px;"><span style="font-weight:600; min-width:130px;">Invalidation:</span><span>${invalidationText}</span></div>` : ''}
 
         </div>
 
@@ -868,7 +859,7 @@ async function fetchMarketQuotes() {
         const sym = q.symbol;
         const price = q.ltp || 0.0;
         const change = q.change || 0.0;
-        const spread = q.spread_pct !== undefined ? `${q.spread_pct.toFixed(3)}%` : '0.015%';
+        const spread = q.spread_pct !== undefined && q.spread_pct !== null ? `${Number(q.spread_pct).toFixed(3)}%` : '—';
 
         let priceId = '';
         let changeId = '';

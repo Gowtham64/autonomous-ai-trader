@@ -38,6 +38,7 @@ const Office3D = {
   agentMonitors: {},
   clickableObjects: [],
   liveWorkCache: {},
+  quoteRibbon: 'Waiting for Delta quotes',
   
   // Animated 3D Objects Cache
   animatedObjects: [],
@@ -156,13 +157,16 @@ function setupDynamicScreenCanvases() {
 
   // Poll live agent work details from backend to keep monitors synced with real pipeline
   syncLiveWorkToMonitors();
+  syncQuoteRibbon();
   setInterval(syncLiveWorkToMonitors, 8000);
+  setInterval(syncQuoteRibbon, 8000);
 }
 
 async function syncLiveWorkToMonitors() {
   try {
     const token = localStorage.getItem('ai_trader_token') || '';
     const res = await fetch('/api/office/agents/live-work', {
+      credentials: 'same-origin',
       headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) }
     });
     if (res.ok) {
@@ -173,6 +177,23 @@ async function syncLiveWorkToMonitors() {
     }
   } catch (e) {
     console.debug("[Office3D] live-work sync note:", e);
+  }
+}
+
+async function syncQuoteRibbon() {
+  try {
+    const res = await fetch('/api/market/quotes', { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const quotes = (data.quotes || []).filter(q => String(q.symbol || '').endsWith('USDT') && q.ltp);
+    if (!quotes.length) return;
+    Office3D.quoteRibbon = quotes.map(q => {
+      const change = Number(q.change || 0);
+      const sign = change >= 0 ? '+' : '';
+      return `${q.symbol} ${Number(q.ltp).toLocaleString()} ${sign}${change.toFixed(2)}%`;
+    }).join('   ');
+  } catch (e) {
+    console.debug('[Office3D] quote ribbon note:', e);
   }
 }
 
@@ -210,8 +231,8 @@ function drawAgentSpecificScreens(mon, tick) {
   const work = (Office3D.liveWorkCache && Office3D.liveWorkCache[agentId]) ? Office3D.liveWorkCache[agentId] : null;
   const aData = mon.agentData || {};
   const agentName = (work && work.name) ? work.name : (aData.name || agentId.toUpperCase());
-  const activeSymbol = (work && work.active_target) ? work.active_target.symbol : (aData.activeSymbol || "RELIANCE.NS");
-  const ltp = (work && work.active_target) ? work.active_target.ltp : "₹1,226.00 (+0.56%)";
+  const activeSymbol = (work && work.active_target) ? work.active_target.symbol : (aData.activeSymbol || "—");
+  const ltp = (work && work.active_target) ? work.active_target.ltp : "—";
 
   // ==========================================
   // 1. LEFT SCREEN: Domain-Specific Visualizer
@@ -642,7 +663,7 @@ function updateDynamicScreenCanvases(tick) {
   ctxT.font = 'bold 16px monospace';
   const offset = (tick * 2) % 400;
   ctxT.fillStyle = '#38bdf8';
-  ctxT.fillText('RELIANCE ₹1,226.00 ▲ +0.56%   TATAMOTORS ₹965.20 ▲ +1.45%   NIFTY 23,140 ▲ +0.34%   VIX 12.40 ▼ -4.1%', -offset + 40, 38);
+  ctxT.fillText(Office3D.quoteRibbon || 'Waiting for Delta quotes', -offset + 40, 38);
   Office3D.screenTextures.ticker.needsUpdate = true;
 
   // 2. Update individual agent monitors every 25 ticks

@@ -1946,7 +1946,7 @@ async function openAgentModal(agent) {
   const symEl = document.getElementById('modalActiveSymbol');
   if (symEl) symEl.innerText = agent.activeSymbol || "RELIANCE.NS";
   const ltpEl = document.getElementById('modalActiveLtp');
-  if (ltpEl) ltpEl.innerText = "₹1,226.00 (+0.56%)";
+  if (ltpEl) ltpEl.innerText = "—";
 
   const history = document.getElementById('modalChatHistory');
   if (history) {

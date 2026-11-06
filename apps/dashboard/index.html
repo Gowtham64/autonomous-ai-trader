@@ -498,31 +498,7 @@
               <a href="#" class="text-cyan" style="font-size:11px; text-decoration:none;" id="btnViewAllActivity">View All →</a>
             </div>
             <div class="activity-stream" id="recentActivityStream">
-              <div class="activity-item">
-                <span class="activity-time">14:32:01</span>
-                <span class="activity-tag info">INFO</span>
-                <span class="activity-msg">Evaluation cycle #152 completed (60.0s)</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-time">14:31:55</span>
-                <span class="activity-tag reject">REJECT</span>
-                <span class="activity-msg">XRPUSDT — EMA_TREND_FILTER_REJECTED</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-time">14:31:54</span>
-                <span class="activity-tag reject">REJECT</span>
-                <span class="activity-msg">SOLUSDT — SPREAD_EXCEEDS_LIMIT (0.064% > 0.05%)</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-time">14:31:52</span>
-                <span class="activity-tag reject">REJECT</span>
-                <span class="activity-msg">ETHUSDT — EMA_TREND_FILTER_REJECTED</span>
-              </div>
-              <div class="activity-item">
-                <span class="activity-time">14:31:49</span>
-                <span class="activity-tag info">INFO</span>
-                <span class="activity-msg">Scanned 5 symbols, 0 trade candidates passed all gates</span>
-              </div>
+              <div style="text-align:center; padding:16px; color:var(--text-dim);">Waiting for active events...</div>
             </div>
           </div>
 
@@ -840,10 +816,10 @@
         <div class="panel-card" style="padding:16px;">
           <h3 style="font-size:14px; margin-bottom:12px; color:var(--accent-cyan);">Database & Cloud Infrastructure</h3>
           <div style="display:flex; flex-direction:column; gap:8px; font-size:12px;">
-            <div class="risk-row"><span class="eval-label">PostgreSQL Database:</span><span class="risk-val text-green" id="cfgDbStatus">Connected (asyncpg)</span></div>
-            <div class="risk-row"><span class="eval-label">Redis Event Bus:</span><span class="risk-val text-green" id="cfgRedisStatus">Connected</span></div>
-            <div class="risk-row"><span class="eval-label">Target Cloud Project:</span><span class="risk-val">trading-513714 (GCP)</span></div>
-            <div class="risk-row"><span class="eval-label">Docker Compose Stack:</span><span class="risk-val text-green">Active (Port 8000)</span></div>
+            <div class="risk-row"><span class="eval-label">Database:</span><span class="risk-val" id="cfgDbStatus">SQLite on the service disk</span></div>
+            <div class="risk-row"><span class="eval-label">Quote source:</span><span class="risk-val" id="cfgRedisStatus">Delta Exchange public tickers</span></div>
+            <div class="risk-row"><span class="eval-label">Host:</span><span class="risk-val">Render</span></div>
+            <div class="risk-row"><span class="eval-label">Process:</span><span class="risk-val">This web service</span></div>
           </div>
         </div>
       </div>
@@ -864,6 +840,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=4.0.0"></script>
+  <script src="/static/app.js?v=4.1.0"></script>
 </body>
 </html>
