@@ -402,7 +402,7 @@ async function fetchPerformanceMetrics() {
       const totalTrades = metrics.total_trades || 0;
       const winTrades = metrics.winning_trades || 0;
       const lossTrades = metrics.losing_trades || (totalTrades - winTrades);
-      const winRate = metrics.win_rate !== undefined ? `${metrics.win_rate.toFixed(1)}%` : '—';
+      const winRate = totalTrades > 0 && metrics.win_rate !== undefined ? `${metrics.win_rate.toFixed(1)}%` : '—';
       document.getElementById('kpiWinRate').innerText = winRate;
       document.getElementById('kpiWinLossRatio').innerText = `(${winTrades} / ${totalTrades} trades)`;
 

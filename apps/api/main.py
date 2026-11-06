@@ -588,12 +588,24 @@ async def get_orders():
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent.parent
 
+    session_file = root / "data" / "session_state.json"
+    session_start_str = None
+    if session_file.exists():
+        try:
+            with open(session_file, mode="r", encoding="utf-8") as f:
+                s_data = json.load(f)
+                session_start_str = s_data.get("session_start")
+        except Exception:
+            pass
+
     broker = await get_active_broker()
     db_orders = await TradeRepository.get_recent_orders(limit=100)
     broker_orders = await broker.get_order_book()
     broker_trades = await broker.get_trade_book()
 
     completed_trades = await get_unified_trade_history()
+    if session_start_str:
+        completed_trades = [t for t in completed_trades if (t.get("timestamp") or "") >= session_start_str]
 
     # Load audit records if db orders are sparse
     audit_orders = []
@@ -652,18 +664,41 @@ async def get_performance():
     positions = await broker.get_positions()
     metrics = treasury.get_metrics()
 
-    completed_trades = await get_unified_trade_history()
-    total_trades = len(completed_trades)
-    winning_trades = sum(1 for t in completed_trades if (t.get("net_pnl") or 0.0) > 0)
-    losing_trades = sum(1 for t in completed_trades if (t.get("net_pnl") or 0.0) < 0)
-    win_rate = round((winning_trades / max(1, total_trades)) * 100, 1)
-    gross_win = sum(t["net_pnl"] for t in completed_trades if (t.get("net_pnl") or 0.0) > 0)
-    gross_loss = abs(sum(t["net_pnl"] for t in completed_trades if (t.get("net_pnl") or 0.0) < 0))
-    profit_factor = round(gross_win / max(0.01, gross_loss), 2)
-    avg_win = round(gross_win / max(1, winning_trades), 2)
-    avg_loss = round(gross_loss / max(1, losing_trades), 2)
-    realized_pnl = round(sum(t.get("net_pnl", 0.0) for t in completed_trades), 2)
+    root = Path(__file__).resolve().parent.parent.parent
+    session_file = root / "data" / "session_state.json"
+    session_start_str = None
+    if session_file.exists():
+        try:
+            with open(session_file, mode="r", encoding="utf-8") as f:
+                s_data = json.load(f)
+                session_start_str = s_data.get("session_start")
+        except Exception:
+            pass
 
+    completed_trades = await get_unified_trade_history()
+    active_trades = [t for t in completed_trades if (t.get("timestamp") or "") >= session_start_str] if session_start_str else completed_trades
+
+    total_trades = len(active_trades)
+    winning_trades = sum(1 for t in active_trades if (t.get("net_pnl") or 0.0) > 0)
+    losing_trades = sum(1 for t in active_trades if (t.get("net_pnl") or 0.0) < 0)
+    win_rate = round((winning_trades / max(1, total_trades)) * 100, 1) if total_trades > 0 else 0.0
+    gross_win = sum(t["net_pnl"] for t in active_trades if (t.get("net_pnl") or 0.0) > 0)
+    gross_loss = abs(sum(t["net_pnl"] for t in active_trades if (t.get("net_pnl") or 0.0) < 0))
+    profit_factor = round(gross_win / max(0.01, gross_loss), 2) if gross_loss > 0 else (gross_win if gross_win > 0 else 0.0)
+    avg_win = round(gross_win / max(1, winning_trades), 2) if winning_trades > 0 else 0.0
+    avg_loss = round(gross_loss / max(1, losing_trades), 2) if losing_trades > 0 else 0.0
+    realized_pnl = round(sum(t.get("net_pnl", 0.0) for t in active_trades), 2)
+
+    target_start_cap = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
+    total_cap = funds.get("total_capital", target_start_cap)
+    if total_cap == 0.0 or total_cap is None or (session_start_str and total_cap > target_start_cap * 5):
+        total_cap = target_start_cap + realized_pnl
+
+    metrics["starting_capital"] = target_start_cap
+    metrics["current_capital"] = total_cap
+    metrics["total_equity"] = total_cap
+    metrics["realized_pnl"] = realized_pnl
+    metrics["net_trading_profit"] = realized_pnl
     metrics["total_trades"] = total_trades
     metrics["winning_trades"] = winning_trades
     metrics["losing_trades"] = losing_trades
@@ -671,45 +706,33 @@ async def get_performance():
     metrics["profit_factor"] = profit_factor
     metrics["avg_win"] = avg_win
     metrics["avg_loss"] = avg_loss
-    if realized_pnl != 0.0:
-        metrics["realized_pnl"] = realized_pnl
+    metrics["max_drawdown_pct"] = 0.0 if total_trades == 0 else metrics.get("max_drawdown_pct", 0.0)
 
-    root = Path(__file__).resolve().parent.parent.parent
-    telemetry_file = root / "data" / "paper_7day_telemetry.json"
     equity_history = []
-    
-    if telemetry_file.exists():
-        try:
-            with open(telemetry_file, mode="r", encoding="utf-8") as f:
-                tel_data = json.load(f)
-                m = tel_data.get("metrics", {})
-                if total_trades == 0:
-                    metrics["total_trades"] = m.get("trades_closed", 152)
-                    metrics["winning_trades"] = m.get("winning_trades", 111)
-                    metrics["losing_trades"] = m.get("losing_trades", 41)
-                    metrics["realized_pnl"] = round(m.get("net_pnl", 89.45), 2)
-                    metrics["win_rate"] = round((m.get("winning_trades", 111) / max(1, m.get("trades_closed", 152))) * 100, 1)
-                    gw = m.get("gross_profit", 112.78)
-                    gl = abs(m.get("gross_loss", 20.31))
-                    metrics["profit_factor"] = round(gw / max(0.01, gl), 2)
-                metrics["max_drawdown_pct"] = round(m.get("max_drawdown", 1.94), 2)
-
-                # Extract real daily equity points
-                for ds in tel_data.get("daily_summaries", []):
-                    equity_history.append({
-                        "day": ds.get("day"),
-                        "date": ds.get("date"),
-                        "start_equity": ds.get("start_equity"),
-                        "ending_equity": ds.get("ending_equity"),
-                        "net_pnl": ds.get("net_pnl"),
-                    })
-        except Exception as e:
-            logger.debug(f"Telemetry parse note: {e}")
-
-    target_start_cap = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
-    total_cap = funds.get("total_capital", target_start_cap)
-    if total_cap == 0.0 or total_cap is None:
-        total_cap = target_start_cap
+    if session_start_str:
+        equity_history.append({
+            "day": 1,
+            "date": datetime.now(UTC).strftime("%Y-%m-%d"),
+            "start_equity": target_start_cap,
+            "ending_equity": total_cap,
+            "net_pnl": realized_pnl,
+        })
+    else:
+        telemetry_file = root / "data" / "paper_7day_telemetry.json"
+        if telemetry_file.exists():
+            try:
+                with open(telemetry_file, mode="r", encoding="utf-8") as f:
+                    tel_data = json.load(f)
+                    for ds in tel_data.get("daily_summaries", []):
+                        equity_history.append({
+                            "day": ds.get("day"),
+                            "date": ds.get("date"),
+                            "start_equity": ds.get("start_equity"),
+                            "ending_equity": ds.get("ending_equity"),
+                            "net_pnl": ds.get("net_pnl"),
+                        })
+            except Exception as e:
+                logger.debug(f"Telemetry parse note: {e}")
 
     return {
         "live_funds": {
