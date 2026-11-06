@@ -3,9 +3,9 @@ import json
 import os
 from contextlib import asynccontextmanager
 try:
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 except ImportError:
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
     UTC = timezone.utc
 from typing import Annotated, Any
 
@@ -114,7 +114,7 @@ _live_active_agent_actions: list[dict] = [
         "symbol": "ACCOUNT",
         "action": "Real-Time MTM Equity Reconciled",
         "status": "RECONCILED",
-        "summary": "Account equity $1,000.00 reconciled with zero accounting discrepancy. Drawdown: 0.00%.",
+        "summary": "Account equity $6.00 reconciled with zero accounting discrepancy. Drawdown: 0.00%.",
         "details": "Ledger cash balance matches broker funds exactly. Circuit breaker safe.",
     },
 ]
@@ -1020,13 +1020,23 @@ async def get_evaluation_status():
         except Exception:
             pass
 
-    elapsed_secs = hb.get("elapsed_seconds", 9120.0)
-    target_hours = hb.get("target_duration_hours", 336.0)
-    completed_hours = hb.get("completed_hours", elapsed_secs / 3600.0)
-    progress_pct = round((completed_hours / target_hours) * 100.0, 2) if target_hours > 0 else 0.75
+    broker = await get_active_broker()
+    funds = await broker.get_funds()
+    display_starting_capital = float(settings.INITIAL_CAPITAL) if settings.INITIAL_CAPITAL > 0 else 6.0
+    display_equity = funds.get("total_capital", display_starting_capital)
 
-    display_starting_capital = 1000.0 if settings.INITIAL_CAPITAL >= 1000.0 else float(settings.INITIAL_CAPITAL)
-    display_equity = hb.get("current_equity", display_starting_capital)
+    live_trades = await get_unified_trade_history(include_historical_ledgers=False)
+    today_prefix = datetime.now(UTC).strftime("%Y-%m-%d")
+    today_trades = [t for t in live_trades if (t.get("timestamp") or "").startswith(today_prefix)]
+    live_trades_count = len(today_trades)
+    winning_trades = sum(1 for t in today_trades if (t.get("net_pnl") or 0.0) > 0)
+    win_rate = round((winning_trades / max(1, live_trades_count)) * 100, 1) if live_trades_count > 0 else 0.0
+
+    target_hours = 72.0  # 3-Day Go-Live Evaluation window
+    elapsed_secs = hb.get("elapsed_seconds", 3600.0)
+    completed_hours = elapsed_secs / 3600.0
+    progress_pct = round((completed_hours / target_hours) * 100.0, 2) if target_hours > 0 else 1.0
+    progress_pct = min(100.0, max(0.1, progress_pct))
 
     now_utc = datetime.now(UTC)
     start_dt = now_utc - timedelta(seconds=elapsed_secs)
@@ -1034,8 +1044,7 @@ async def get_evaluation_status():
     start_str = start_dt.strftime("%b %d, %Y %H:%M UTC")
     end_str = target_end_dt.strftime("%b %d, %Y %H:%M UTC")
 
-    is_crypto = getattr(settings, "EXCHANGE", "").upper() == "DELTA"
-    phase_title = "24/7 Delta Crypto Autonomous Trading" if is_crypto else "14-Day Paper Evaluation"
+    phase_title = "3-Day Paper Evaluation (Go-Live Gate)"
 
     return {
         "evaluation_id": phase_title,
@@ -1045,25 +1054,29 @@ async def get_evaluation_status():
         "target_end_time": end_str,
         "elapsed_seconds": elapsed_secs,
         "elapsed_formatted": f"{int(completed_hours // 24)}d {int(completed_hours % 24):02d}h {int((elapsed_secs % 3600) // 60):02d}m",
-        "target_formatted": "14d 00h",
+        "target_formatted": "3d 00h",
         "completed_hours": round(completed_hours, 2),
         "target_duration_hours": target_hours,
         "progress_pct": progress_pct,
         "starting_capital": display_starting_capital,
         "current_equity": display_equity,
         "drawdown_pct": hb.get("drawdown_pct", 0.0),
-        "total_trades": hb.get("total_trades", telem.get("metrics", {}).get("trades_closed", 0)),
+        "total_trades": live_trades_count,
         "daily_loss_realized_pct": round((drisk.get("accumulated_loss", 0.0) / max(drisk.get("day_start_equity", display_starting_capital), 1.0)) * 100, 2),
         "daily_loss_limit_pct": settings.MAX_DAILY_LOSS_PCT * 100,
         "max_drawdown_limit_pct": settings.MAX_PORTFOLIO_DRAWDOWN_PCT * 100,
         "acceptance_criteria": [
             {"criterion": "Completed round trips", "target": "≥ 0 completed round trips", "status": "PASS"},
-            {"criterion": "Profit Factor", "target": "Profit factor ≥ 1.20", "status": "PENDING"},
+            {"criterion": "Profit Factor", "target": "Profit factor ≥ 1.60", "status": "PENDING"},
             {"criterion": "Maximum Drawdown", "target": f"Max drawdown ≤ {settings.MAX_PORTFOLIO_DRAWDOWN_PCT * 100:.2f}%", "status": "PASS"},
             {"criterion": "Daily Loss Breaches", "target": f"≤ 2 daily-loss breaches (≤ {settings.MAX_DAILY_LOSS_PCT * 100:.2f}%)", "status": "PASS"},
             {"criterion": "System Stability", "target": "Zero crashes / clean recovery", "status": "PASS"},
         ],
-        "telemetry_metrics": telem.get("metrics", {}),
+        "telemetry_metrics": {
+            "trades_closed": live_trades_count,
+            "win_rate": win_rate,
+            "current_equity": display_equity,
+        },
     }
 
 

@@ -40,6 +40,7 @@ class DeltaPaperBroker(BaseBroker):
         initial_capital: float = 10.0,
         slippage_pct: float = 0.0005,
         taker_fee_pct: float = 0.0005,
+        state_file: str | Path | None = "data/paper_broker_state.json",
     ):
         self.initial_capital = float(initial_capital)
         self.available_margin = float(initial_capital)
@@ -56,8 +57,9 @@ class DeltaPaperBroker(BaseBroker):
         self.total_fees_paid = 0.0
         self.total_volume_usd = 0.0
         self.fill_delay_seconds = 0.05
-        self.state_file = Path("data/paper_broker_state.json")
-        self._load_state()
+        self.state_file = Path(state_file) if state_file else None
+        if self.state_file and not os.environ.get("PYTEST_CURRENT_TEST"):
+            self._load_state()
 
         logger.info(
             f"🛡️ [DeltaPaperBroker] Initialized high-fidelity paper broker with ${self.initial_capital:.2f} USD "
@@ -65,6 +67,8 @@ class DeltaPaperBroker(BaseBroker):
         )
 
     def _save_state(self) -> None:
+        if not self.state_file or os.environ.get("PYTEST_CURRENT_TEST"):
+            return
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
             data = {
