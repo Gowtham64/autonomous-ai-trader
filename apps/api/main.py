@@ -1034,12 +1034,21 @@ async def get_evaluation_status():
     display_starting_capital = 1000.0 if settings.INITIAL_CAPITAL >= 1000.0 else float(settings.INITIAL_CAPITAL)
     display_equity = hb.get("current_equity", display_starting_capital)
 
+    now_utc = datetime.now(UTC)
+    start_dt = now_utc - timedelta(seconds=elapsed_secs)
+    target_end_dt = start_dt + timedelta(hours=target_hours)
+    start_str = start_dt.strftime("%b %d, %Y %H:%M UTC")
+    end_str = target_end_dt.strftime("%b %d, %Y %H:%M UTC")
+
+    is_crypto = getattr(settings, "EXCHANGE", "").upper() == "DELTA"
+    phase_title = "24/7 Delta Crypto Autonomous Trading" if is_crypto else "14-Day Paper Evaluation"
+
     return {
-        "evaluation_id": "4H.4 – 14-Day Paper Evaluation",
-        "phase": "4H.4 – 14-Day Paper Evaluation",
+        "evaluation_id": phase_title,
+        "phase": phase_title,
         "status": "RUNNING",
-        "start_time": "Jan 26, 2025 12:00 UTC",
-        "target_end_time": "Feb 9, 2025 12:00 UTC",
+        "start_time": start_str,
+        "target_end_time": end_str,
         "elapsed_seconds": elapsed_secs,
         "elapsed_formatted": f"{int(completed_hours // 24)}d {int(completed_hours % 24):02d}h {int((elapsed_secs % 3600) // 60):02d}m",
         "target_formatted": "14d 00h",
