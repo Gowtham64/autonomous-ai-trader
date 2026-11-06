@@ -61,7 +61,8 @@ class Settings(BaseSettings):
     MAX_RISK_PER_TRADE_PCT: float = 0.005         # 0.5% per trade risk (₹10 on ₹2,000)
     MAX_DAILY_LOSS_PCT: float = 0.01              # 1% max daily loss circuit breaker (₹20 on ₹2,000)
     MAX_PORTFOLIO_DRAWDOWN_PCT: float = 0.03      # 3% max drawdown circuit breaker (₹60 on ₹2,000)
-    MAX_OPEN_POSITIONS: int = 3                   # Max concurrent positions on bootstrap capital
+    MAX_OPEN_POSITIONS: int = 3                   # Fallback only. Each cycle decides the live cap.
+    OPEN_POSITION_CEILING: int = 8                # Hard ceiling. A cycle cannot open more than this.
     MAX_SECTOR_EXPOSURE_PCT: float = 0.25         # 25% max in any sector
     MAX_SINGLE_STOCK_EXPOSURE_PCT: float = 0.15   # 15% max capital in single stock
     MAX_SLIPPAGE_PCT: float = 0.005               # 0.5% max allowable slippage

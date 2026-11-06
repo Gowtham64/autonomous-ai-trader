@@ -136,6 +136,8 @@ async def update_real_quotes_task():
                     if any(item.get("source") == "delta" for item in _live_quotes_cache):
                         global _quotes_updated_at
                         _quotes_updated_at = datetime.now(UTC)
+                    from market.live_quotes import publish
+                    publish(_live_quotes_cache)
                     broker = await get_active_broker()
                     if hasattr(broker, "update_mark_prices"):
                         open_positions = await broker.get_positions()

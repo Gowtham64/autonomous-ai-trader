@@ -214,6 +214,30 @@ class AutonomousTradingDaemon:
             "net_profit": round(treasury.net_trading_profit, 2),
             "realized_pnl": round(treasury.realized_pnl, 2),
         }
+        from market.live_quotes import snapshot
+        from risk.position_budget import decide_open_trade_cap
+        perf = {"total": 0, "win_rate": 0.0, "profit_factor": 0.0}
+        try:
+            perf = await TradeRepository.get_journal_win_stats(hours=72, limit=20)
+        except Exception as perf_err:
+            logger.debug(f"[Open Trade Cap] Performance read note: {perf_err}")
+        drawdown_pct = 0.0
+        if self.risk_engine.peak_equity > 0:
+            drawdown_pct = max(0.0, (self.risk_engine.peak_equity - self.risk_engine.total_equity) / self.risk_engine.peak_equity)
+        slot_decision = decide_open_trade_cap(
+            equity=float(self.risk_engine.total_equity or self.total_capital or 0.0),
+            closed_trades=int(perf.get("total") or 0),
+            win_rate=float(perf.get("win_rate") or 0.0),
+            profit_factor=float(perf.get("profit_factor") or 0.0),
+            drawdown_pct=drawdown_pct,
+            daily_loss=float(self.risk_engine.daily_realized_loss or 0.0),
+            quotes=snapshot(),
+            survival_mode=bool(is_survival),
+        )
+        self._open_trade_cap = slot_decision.cap
+        cycle_summary["open_trade_cap"] = slot_decision.cap
+        cycle_summary["open_trade_reasons"] = slot_decision.reasons
+        logger.info("[Open Trade Cap] " + " ".join(slot_decision.reasons))
 
         # 1. State: SCANNING Complete Universe of Stocks/Cryptos
         self.current_state = TradingSessionState.SCANNING
@@ -289,7 +313,11 @@ class AutonomousTradingDaemon:
                 logger.info(f"[Memory Awareness] Retrieved {len(pre_memory['risk_warnings'])} memory warnings for {candidate.symbol}.")
 
             # Deterministic Risk Evaluation
-            risk_res = self.risk_engine.evaluate_trade_intent(decision, open_positions)
+            risk_res = self.risk_engine.evaluate_trade_intent(
+                decision,
+                open_positions,
+                max_open_positions=getattr(self, "_open_trade_cap", None),
+            )
 
             if risk_res.approved:
                 # 5.4. LEARNING FROM TRADE HISTORY — every completed trade reshapes the

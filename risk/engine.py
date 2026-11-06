@@ -22,6 +22,7 @@ class DeterministicRiskEngine:
         decision: TradeDecision,
         open_positions: list[PositionSnapshot],
         sector: str = "General",
+        max_open_positions: int | None = None,
     ) -> RiskCheckResult:
         logger.info(f"Deterministic Risk Engine assessing trade intent for {decision.symbol}")
         rejection_reasons = []
@@ -51,11 +52,12 @@ class DeterministicRiskEngine:
                 f"Max Drawdown Limit hit: {drawdown_pct*100:.2f}% >= {effective_max_dd*100:.1f}%"
             )
 
-        # 4. Open Positions Count Cap
+        # 4. Open-trade cap chosen for this cycle from capital, results, and the market.
         active_positions = [p for p in open_positions if p.is_active]
-        if len(active_positions) >= settings.MAX_OPEN_POSITIONS:
+        cap = settings.MAX_OPEN_POSITIONS if max_open_positions is None else max_open_positions
+        if len(active_positions) >= cap:
             rejection_reasons.append(
-                f"Max open positions count reached: {len(active_positions)}/{settings.MAX_OPEN_POSITIONS}"
+                f"Open-trade cap for this cycle is {cap}. Active positions: {len(active_positions)}."
             )
 
         # 5. Duplicate Position Prevention & Valuation Integrity
