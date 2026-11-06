@@ -645,10 +645,21 @@ async def get_positions():
     positions = []
     for p in raw_positions:
         p_dict = p.model_dump() if hasattr(p, "model_dump") else (p.dict() if hasattr(p, "dict") else dict(p))
-        p_dict["direction"] = p_dict.get("side", "BUY")
-        p_dict["mark_price"] = p_dict.get("mark_price") or p_dict.get("current_price") or p_dict.get("entry_price") or 0.0
-        p_dict["take_profit"] = p_dict.get("target_1") or p_dict.get("target") or 0.0
-        p_dict["strategy"] = "Multi-Timeframe Momentum"
+        p_dict["direction"] = p_dict.get("side") or "—"
+        p_dict["mark_price"] = p_dict.get("mark_price") or p_dict.get("current_price")
+        p_dict["take_profit"] = p_dict.get("target_1") or p_dict.get("target")
+        opened = p_dict.get("opened_at")
+        age = None
+        if opened:
+            try:
+                opened_dt = opened if isinstance(opened, datetime) else datetime.fromisoformat(str(opened))
+                if opened_dt.tzinfo is None:
+                    opened_dt = opened_dt.replace(tzinfo=UTC)
+                mins = max(0, int((datetime.now(UTC) - opened_dt).total_seconds() // 60))
+                age = f"{mins}m" if mins < 120 else f"{mins // 60}h {mins % 60}m"
+            except (TypeError, ValueError):
+                age = None
+        p_dict["age"] = age
         positions.append(p_dict)
     return {"positions": positions}
 
@@ -702,8 +713,8 @@ async def get_unified_trade_history(include_historical_ledgers: bool = True) -> 
                     completed.append({
                         "trade_id": str(j.id),
                         "symbol": j.symbol,
-                        "side": "BUY" if "BUY" in (j.reflection_notes or "").upper() else "SELL",
-                        "quantity": 1.0,
+                    "side": "BUY" if "BUY" in (j.reflection_notes or "").upper() else ("SELL" if "SELL" in (j.reflection_notes or "").upper() else "—"),
+                    "quantity": None,
                         "contract_multiplier": 1.0,
                         "entry_price": float(j.entry_price or 0.0),
                         "exit_price": float(j.exit_price or 0.0),
@@ -859,10 +870,14 @@ async def get_performance():
     total_cap = funds.get("total_capital", target_start_cap)
     if total_cap == 0.0 or total_cap is None or (session_start_str and total_cap > target_start_cap * 5):
         total_cap = target_start_cap + realized_pnl
+    unrealized_now = float(funds.get("unrealized_pnl") or 0.0)
+    mark_equity = funds.get("mark_to_market_equity")
+    if mark_equity is None:
+        mark_equity = float(total_cap) + unrealized_now
 
     metrics["starting_capital"] = target_start_cap
-    metrics["current_capital"] = total_cap
-    metrics["total_equity"] = total_cap
+    metrics["current_capital"] = round(float(mark_equity), 4)
+    metrics["total_equity"] = round(float(mark_equity), 4)
     metrics["realized_pnl"] = realized_pnl
     metrics["net_trading_profit"] = realized_pnl
     metrics["total_trades"] = total_trades
@@ -874,31 +889,13 @@ async def get_performance():
     metrics["avg_loss"] = avg_loss
     metrics["max_drawdown_pct"] = 0.0 if total_trades == 0 else metrics.get("max_drawdown_pct", 0.0)
 
-    equity_history = []
-    if session_start_str:
-        equity_history.append({
-            "day": 1,
-            "date": datetime.now(UTC).strftime("%Y-%m-%d"),
-            "start_equity": target_start_cap,
-            "ending_equity": total_cap,
-            "net_pnl": realized_pnl,
-        })
-    else:
-        telemetry_file = root / "data" / "paper_7day_telemetry.json"
-        if telemetry_file.exists():
-            try:
-                with open(telemetry_file, mode="r", encoding="utf-8") as f:
-                    tel_data = json.load(f)
-                    for ds in tel_data.get("daily_summaries", []):
-                        equity_history.append({
-                            "day": ds.get("day"),
-                            "date": ds.get("date"),
-                            "start_equity": ds.get("start_equity"),
-                            "ending_equity": ds.get("ending_equity"),
-                            "net_pnl": ds.get("net_pnl"),
-                        })
-            except Exception as e:
-                logger.debug(f"Telemetry parse note: {e}")
+    equity_history = [{
+        "day": 1,
+        "date": datetime.now(UTC).strftime("%Y-%m-%d"),
+        "start_equity": target_start_cap,
+        "ending_equity": round(float(mark_equity), 4),
+        "net_pnl": round(float(mark_equity) - target_start_cap, 4),
+    }]
 
     historical_baseline = {}
     benchmark_file = root / "data" / "historical_benchmark_baseline.json"
@@ -915,7 +912,8 @@ async def get_performance():
             "starting_capital": target_start_cap,
             "available_margin": funds.get("available_margin", total_cap),
             "used_margin": funds.get("used_margin", 0.0),
-            "unrealized_pnl": funds.get("unrealized_pnl", 0.0),
+            "unrealized_pnl": unrealized_now,
+            "mark_to_market_equity": round(float(mark_equity), 4),
         },
         "available_cash": funds.get("available_margin", total_cap),
         "total_capital": total_cap,
@@ -963,7 +961,7 @@ async def get_market_trades(symbol: str = "BTCUSDT", limit: int = 30):
                     buyer = str(tr.get("buyer_role") or "")
                     trades.append({
                         "trade_id": str(raw_ts),
-                        "symbol": tr.get("symbol") or delta_symbol,
+                        "symbol": symbol,
                         "price": float(tr.get("price") or 0.0),
                         "quantity": float(tr.get("size") or 0.0),
                         "side": "BUY" if buyer == "taker" else "SELL",

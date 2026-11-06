@@ -406,14 +406,23 @@ async function fetchPerformanceMetrics() {
       const funds = data.live_funds || {};
       const metrics = data.metrics || {};
 
-      const starting = funds.starting_capital !== undefined ? funds.starting_capital : 6.0;
-      const equity = funds.total_capital !== undefined ? funds.total_capital : (data.total_capital || starting);
-      const realized = metrics.realized_pnl || 0.0;
-      const unrealized = funds.unrealized_pnl || 0.0;
-      const netTotal = realized + unrealized;
+      const starting = Number(funds.starting_capital !== undefined ? funds.starting_capital : 0);
+      const equity = Number(
+        funds.mark_to_market_equity !== undefined && funds.mark_to_market_equity !== null
+          ? funds.mark_to_market_equity
+          : (funds.total_capital !== undefined ? funds.total_capital : data.total_capital || 0)
+      );
+      const realized = Number(metrics.realized_pnl || 0);
+      const unrealized = Number(funds.unrealized_pnl || 0);
+      const netTotal = equity - starting;
       const netPct = starting > 0 ? (netTotal / starting) * 100 : 0.0;
 
       document.getElementById('kpiEquity').innerText = `$${equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const equityChangeEl = document.getElementById('kpiEquityChange');
+      if (equityChangeEl) {
+        equityChangeEl.innerText = `${netPct >= 0 ? '+' : ''}${netPct.toFixed(2)}% vs start`;
+        equityChangeEl.className = netPct >= 0 ? 'kpi-subtext text-green' : 'kpi-subtext text-red';
+      }
       document.getElementById('kpiNetPnl').innerText = `${netTotal >= 0 ? '+' : ''}$${netTotal.toFixed(2)}`;
       document.getElementById('kpiNetPnlPct').innerText = `${netPct >= 0 ? '+' : ''}${netPct.toFixed(2)}%`;
       document.getElementById('kpiRealizedPnl').innerText = `${realized >= 0 ? '+' : ''}$${realized.toFixed(2)}`;
@@ -440,8 +449,6 @@ async function fetchPerformanceMetrics() {
 
       const maxDd = metrics.max_drawdown_pct !== undefined ? metrics.max_drawdown_pct.toFixed(2) : '0.00';
       document.getElementById('kpiMaxDrawdown').innerText = `${maxDd}%`;
-      document.getElementById('riskCurrentDd').innerText = `${maxDd}%`;
-      document.getElementById('riskMaxDd').innerText = `${maxDd}%`;
 
       document.getElementById('perfTotalTrades').innerText = totalTrades;
       document.getElementById('perfWinLoss').innerText = `${winTrades} / ${lossTrades}`;
@@ -455,11 +462,14 @@ async function fetchPerformanceMetrics() {
 
       // Update Equity Curve Chart with real verified progression
       if (equitySeries && data.equity_history && data.equity_history.length > 0) {
-        const baseTime = Math.floor(Date.now() / 1000) - (data.equity_history.length * 86400);
-        const points = data.equity_history.map((pt, idx) => ({
-          time: baseTime + ((idx + 1) * 86400),
-          value: pt.ending_equity ? pt.ending_equity * 10 : 1000.0,
-        }));
+        const points = data.equity_history.map((pt, idx) => {
+          const parsed = pt.date ? Math.floor(Date.parse(`${pt.date}T00:00:00Z`) / 1000) : Math.floor(Date.now() / 1000);
+          const time = Number.isFinite(parsed) ? parsed + idx : Math.floor(Date.now() / 1000) + idx;
+          return { time, value: Number(pt.ending_equity || 0) };
+        });
+        if (points.length === 1) {
+          points.unshift({ time: points[0].time - 60, value: Number(data.equity_history[0].start_equity || points[0].value) });
+        }
         equitySeries.setData(points);
       }
     }
@@ -493,21 +503,21 @@ async function fetchPositionsAndOrders() {
         tbody.innerHTML = positions.map(p => `
           <tr onclick="showPositionModal('${p.symbol}', '${p.direction}', ${p.entry_price || 0}, ${p.mark_price || 0}, ${p.unrealized_pnl || 0})">
             <td><strong>${p.symbol}</strong></td>
-            <td><span class="${p.direction === 'BUY' ? 'text-green' : 'text-red'}">${p.direction}</span></td>
-            <td>${p.strategy || 'Momentum Breakout'}</td>
+            <td><span class="${p.direction === 'BUY' ? 'text-green' : 'text-red'}">${p.direction || '—'}</span></td>
+            <td>${p.strategy || '—'}</td>
             <td>$${(p.entry_price || 0).toFixed(4)}</td>
-            <td>$${(p.mark_price || 0).toFixed(4)}</td>
-            <td>${p.quantity || 1}</td>
-            <td>$${((p.quantity || 1) * (p.entry_price || 0)).toFixed(2)}</td>
-            <td class="text-red">$${(p.stop_loss || 0).toFixed(4)}</td>
-            <td class="text-green">$${(p.take_profit || 0).toFixed(4)}</td>
+            <td>${p.mark_price ? `$${Number(p.mark_price).toFixed(4)}` : '—'}</td>
+            <td>${p.quantity ?? '—'}</td>
+            <td>${p.quantity && p.entry_price ? `$${(p.quantity * p.entry_price).toFixed(2)}` : '—'}</td>
+            <td class="text-red">${p.stop_loss ? `$${Number(p.stop_loss).toFixed(4)}` : '—'}</td>
+            <td class="text-green">${p.take_profit ? `$${Number(p.take_profit).toFixed(4)}` : '—'}</td>
             <td class="${(p.unrealized_pnl || 0) >= 0 ? 'text-green' : 'text-red'}">
               ${(p.unrealized_pnl || 0) >= 0 ? '+' : ''}$${(p.unrealized_pnl || 0).toFixed(4)}
             </td>
-            <td>$0.01</td>
-            <td>$0.00</td>
-            <td>${p.age || '14m'}</td>
-            <td><span class="status-dot green"></span> Protected</td>
+            <td>—</td>
+            <td>—</td>
+            <td>${p.age || '—'}</td>
+            <td>${p.stop_loss ? 'Stop set' : 'No stop'}</td>
           </tr>
         `).join('');
       }
@@ -556,10 +566,10 @@ async function fetchPositionsAndOrders() {
               <td><strong>#${t.trade_id || index + 1}</strong></td>
               <td><strong>${t.symbol}</strong></td>
               <td><span class="${t.side === 'BUY' ? 'text-green' : 'text-red'}">${t.side}</span></td>
-              <td>${t.quantity} (${t.contract_multiplier || 1.0}x)</td>
+              <td>${t.quantity ?? '—'} (${t.contract_multiplier || 1.0}x)</td>
               <td>$${(t.entry_price || 0).toFixed(4)}</td>
               <td>$${(t.exit_price || 0).toFixed(4)}</td>
-              <td><span class="activity-tag ${t.exit_reason.includes('STOP') ? 'reject' : 'info'}">${t.exit_reason}</span></td>
+              <td><span class="activity-tag ${(t.exit_reason || '').includes('STOP') ? 'reject' : 'info'}">${t.exit_reason || '—'}</span></td>
               <td class="${(t.net_pnl || 0) >= 0 ? 'text-green' : 'text-red'}">
                 ${(t.net_pnl || 0) >= 0 ? '+' : ''}$${(t.net_pnl || 0).toFixed(4)}
               </td>
@@ -846,6 +856,52 @@ function renderSystemLogs(filterTerm = '') {
   }
 }
 
+function sameMarket(left, right) {
+  const norm = (value) => String(value || '').toUpperCase().replace('USDT', 'USD').replace('-', '');
+  return norm(left) === norm(right);
+}
+
+function applyLiveQuote(q) {
+  const sym = q.symbol;
+  const price = Number(q.ltp || 0);
+  const change = Number(q.change || 0);
+  const spreadText = q.spread_pct !== undefined && q.spread_pct !== null ? `${Number(q.spread_pct).toFixed(3)}%` : '—';
+  const aliases = {
+    BTCUSD: ['watchPriceBTC', 'watchChangeBTC'],
+    ETHUSD: ['watchPriceETH', 'watchChangeETH'],
+    SOLUSD: ['watchPriceSOL', 'watchChangeSOL'],
+    XRPUSD: ['watchPriceXRP', 'watchChangeXRP'],
+    DOGEUSD: ['watchPriceDOGE', 'watchChangeDOGE'],
+  };
+  const key = String(sym || '').toUpperCase().replace('USDT', 'USD').replace('-', '');
+  const ids = aliases[key];
+  if (ids && price > 0) {
+    const priceEl = document.getElementById(ids[0]);
+    if (priceEl) priceEl.innerText = formatPx(price);
+    const changeEl = document.getElementById(ids[1]);
+    if (changeEl) {
+      changeEl.innerText = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+      changeEl.className = change >= 0 ? 'text-green' : 'text-red';
+    }
+    const spreadEl = document.getElementById(ids[0].replace('watchPrice', 'watchSpread'));
+    if (spreadEl) spreadEl.innerText = spreadText;
+    const pill = document.getElementById(ids[0].replace('watchPrice', 'pillChange'));
+    if (pill) {
+      pill.innerText = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+      pill.className = change >= 0 ? 'text-green' : 'text-red';
+    }
+  }
+  if (price > 0 && sameMarket(sym, currentSymbol)) {
+    const livePriceEl = document.getElementById('chartLivePrice');
+    if (livePriceEl) livePriceEl.innerText = formatPx(price);
+    const liveChangeEl = document.getElementById('chartLiveChange');
+    if (liveChangeEl) {
+      liveChangeEl.innerText = `${change >= 0 ? '+' : ''}${change.toFixed(2)}% session`;
+      liveChangeEl.className = change >= 0 ? 'chart-change text-green' : 'chart-change text-red';
+    }
+  }
+}
+
 // 10. Real Market Quotes Watchlist Poll
 async function fetchMarketQuotes() {
   try {
@@ -855,39 +911,7 @@ async function fetchMarketQuotes() {
       cachedQuotes = data.quotes || [];
 
       // Update Watchlist & Live Prices
-      cachedQuotes.forEach(q => {
-        const sym = q.symbol;
-        const price = q.ltp || 0.0;
-        const change = q.change || 0.0;
-        const spread = q.spread_pct !== undefined && q.spread_pct !== null ? `${Number(q.spread_pct).toFixed(3)}%` : '—';
-
-        let priceId = '';
-        let changeId = '';
-        if (sym === 'BTCUSDT' || sym === 'BTC-USD') { priceId = 'watchPriceBTC'; changeId = 'watchChangeBTC'; }
-        if (sym === 'ETHUSDT' || sym === 'ETH-USD') { priceId = 'watchPriceETH'; changeId = 'watchChangeETH'; }
-        if (sym === 'SOLUSDT' || sym === 'SOL-USD') { priceId = 'watchPriceSOL'; changeId = 'watchChangeSOL'; }
-        if (sym === 'XRPUSDT' || sym === 'XRP-USD') { priceId = 'watchPriceXRP'; changeId = 'watchChangeXRP'; }
-        if (sym === 'DOGEUSDT' || sym === 'DOGE-USD') { priceId = 'watchPriceDOGE'; changeId = 'watchChangeDOGE'; }
-
-        if (priceId && document.getElementById(priceId)) {
-          document.getElementById(priceId).innerText = formatPx(price);
-        }
-        if (changeId && document.getElementById(changeId)) {
-          const el = document.getElementById(changeId);
-          el.innerText = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
-          el.className = change >= 0 ? 'text-green' : 'text-red';
-        }
-        const spreadId = priceId ? priceId.replace('watchPrice', 'watchSpread') : '';
-        if (spreadId && document.getElementById(spreadId) && q.spread_pct !== undefined) {
-          document.getElementById(spreadId).innerText = `${Number(q.spread_pct).toFixed(3)}%`;
-        }
-        const pillId = priceId ? priceId.replace('watchPrice', 'pillChange') : '';
-        if (pillId && document.getElementById(pillId)) {
-          const pill = document.getElementById(pillId);
-          pill.innerText = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
-          pill.className = change >= 0 ? 'text-green' : 'text-red';
-        }
-      });
+      cachedQuotes.forEach(applyLiveQuote);
 
       // Populate Markets Tab
       const fullMarketsTbody = document.getElementById('fullMarketsTableBody');
@@ -929,6 +953,15 @@ async function fetchEvaluationStatus() {
       document.getElementById('kpiDailyLoss').innerText = `${data.daily_loss_realized_pct.toFixed(2)}%`;
       document.getElementById('kpiDailyLossLimit').innerText = `(Limit: ≤ ${data.daily_loss_limit_pct.toFixed(2)}%)`;
       document.getElementById('riskDailyRealized').innerText = `${data.daily_loss_realized_pct.toFixed(2)}% / ${data.daily_loss_limit_pct.toFixed(2)}%`;
+      if (data.drawdown_pct !== undefined) {
+        document.getElementById('kpiMaxDrawdown').innerText = `${Number(data.drawdown_pct).toFixed(2)}%`;
+        document.getElementById('riskCurrentDd').innerText = `${Number(data.drawdown_pct).toFixed(2)}%`;
+      }
+      if (data.max_drawdown_limit_pct !== undefined) {
+        document.getElementById('riskMaxDd').innerText = `${Number(data.max_drawdown_limit_pct).toFixed(2)}%`;
+        const limitEl = document.getElementById('kpiMaxDrawdownLimit');
+        if (limitEl) limitEl.innerText = `(Limit: ≤ ${Number(data.max_drawdown_limit_pct).toFixed(2)}%)`;
+      }
     }
   } catch (err) {
     console.warn('Evaluation status notice:', err);
@@ -963,12 +996,8 @@ window.openTradeAuditModal = function(index) {
       <div style="grid-column: span 2;"><strong>Timestamp:</strong> ${t.timestamp || '—'}</div>
     </div>
     <div style="margin-top:10px;">
-      <h4 style="font-size:12px; color:var(--accent-cyan); margin-bottom:4px;">14-Point Pre-Trade Risk Soundness Verification:</h4>
-      <p style="color:var(--text-muted); font-size:11.5px;">✓ EMA 20 &gt; EMA 50 trend alignment verified. ✓ ATR 14 volatility gate within limit. ✓ Minimum 1:1.5 Risk-to-Reward satisfied. ✓ Hard stop loss resting on exchange broker.</p>
-    </div>
-    <div style="margin-top:8px;">
-      <h4 style="font-size:12px; color:var(--accent-cyan); margin-bottom:4px;">Execution & Accounting Reconciliation:</h4>
-      <p style="color:var(--text-muted); font-size:11.5px;">Executed via Delta Exchange Paper Broker. Adverse slippage model applied. Net balance matches ledger exactly with zero accounting variance.</p>
+      <h4 style="font-size:12px; color:var(--accent-cyan); margin-bottom:4px;">Stored exit record:</h4>
+      <p style="color:var(--text-muted); font-size:11.5px;">${t.exit_reason || 'No exit reason stored.'}</p>
     </div>
   `;
   modal.classList.add('active');
@@ -1089,18 +1118,7 @@ function initWebSocket() {
     activeWebSocket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.quotes) {
-          payload.quotes.forEach(q => {
-            const sym = q.symbol;
-            let priceId = '';
-            if (sym === 'BTCUSDT' || sym === 'BTC-USD') priceId = 'watchPriceBTC';
-            if (sym === 'ETHUSDT' || sym === 'ETH-USD') priceId = 'watchPriceETH';
-            if (sym === 'SOLUSDT' || sym === 'SOL-USD') priceId = 'watchPriceSOL';
-            if (priceId && document.getElementById(priceId) && q.ltp) {
-              document.getElementById(priceId).innerText = formatPx(q.ltp);
-            }
-          });
-        }
+        if (payload.quotes) payload.quotes.forEach(applyLiveQuote);
       } catch (err) {
         // quiet parse
       }

@@ -351,19 +351,47 @@ class DeltaPaperBroker(BaseBroker):
         return exec_report
 
     async def get_order_book(self) -> list[dict]:
+        """Resting orders only. Filled orders stay in the trade book."""
         orders_list = []
-        for o in self.orders.values():
+        for oid, o in self.open_orders.items():
             orders_list.append({
-                "order_id": o.order_id,
-                "client_order_id": o.client_order_id,
-                "symbol": o.symbol,
-                "order_type": "MARKET",
-                "side": "BUY" if "BUY" in str(getattr(o, "action", "BUY")).upper() else "SELL",
-                "quantity": o.filled_quantity,
-                "price": o.average_price,
-                "status": o.status.value if hasattr(o.status, "value") else str(o.status),
-                "timestamp": o.executed_at.isoformat() if hasattr(o.executed_at, "isoformat") else str(o.executed_at),
+                "order_id": oid,
+                "client_order_id": o.get("client_order_id", "—"),
+                "symbol": o.get("symbol", "—"),
+                "order_type": o.get("order_type", "LIMIT"),
+                "side": o.get("side", "—"),
+                "quantity": o.get("quantity"),
+                "price": o.get("price", 0.0),
+                "status": o.get("status", "OPEN"),
+                "timestamp": o.get("timestamp", "—"),
             })
+        for sym, bracket in self.bracket_orders.items():
+            pos = self.positions.get(f"POS-{sym}")
+            exit_side = "BUY" if pos and str(pos.side).upper() == "SELL" else "SELL"
+            if bracket.get("stop_loss"):
+                orders_list.append({
+                    "order_id": f"{bracket.get('id', 'BRK')}-SL",
+                    "client_order_id": "—",
+                    "symbol": sym,
+                    "order_type": "STOP",
+                    "side": exit_side,
+                    "quantity": pos.quantity if pos else None,
+                    "price": bracket.get("stop_loss"),
+                    "status": "RESTING",
+                    "timestamp": bracket.get("created_at").isoformat() if hasattr(bracket.get("created_at"), "isoformat") else "—",
+                })
+            if bracket.get("take_profit"):
+                orders_list.append({
+                    "order_id": f"{bracket.get('id', 'BRK')}-TP",
+                    "client_order_id": "—",
+                    "symbol": sym,
+                    "order_type": "LIMIT",
+                    "side": exit_side,
+                    "quantity": pos.quantity if pos else None,
+                    "price": bracket.get("take_profit"),
+                    "status": "RESTING",
+                    "timestamp": bracket.get("created_at").isoformat() if hasattr(bracket.get("created_at"), "isoformat") else "—",
+                })
         return orders_list
 
     async def get_trade_book(self) -> list[dict]:
