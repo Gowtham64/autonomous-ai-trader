@@ -1646,7 +1646,9 @@ async def _daemon_loop():
 
     broker = await get_active_broker()
     provider = YFinanceMarketDataProvider()
-    scanner = QuantMarketScanner(provider=provider, universe="bootstrap", max_concurrency=5)
+    is_crypto = (settings.EXCHANGE or "").lower() in ["delta", "crypto"] or "DELTA" in type(broker).__name__.upper()
+    target_univ = "delta" if is_crypto else "bootstrap"
+    scanner = QuantMarketScanner(provider=provider, universe=target_univ, max_concurrency=5)
     _daemon_instance = AutonomousTradingDaemon(
         scanner=scanner,
         broker=broker,
@@ -1673,7 +1675,13 @@ async def _daemon_loop():
 async def get_daemon_status():
     """Returns the live status of the autonomous trading daemon."""
     from market.premarket_readiness import premarket_readiness_engine
-    phase, diff_sec, countdown = premarket_readiness_engine.get_market_phase()
+    is_crypto = (settings.EXCHANGE or "").lower() in ["delta", "crypto"]
+    if is_crypto:
+        phase = "CRYPTO_24_7_ACTIVE"
+        diff_sec = 0
+        countdown = "Crypto 24/7/365 active session"
+    else:
+        phase, diff_sec, countdown = premarket_readiness_engine.get_market_phase()
     return {
         "is_running": _daemon_is_running,
         "market_phase": phase,
