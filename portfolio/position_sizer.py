@@ -110,7 +110,9 @@ class PositionSizer:
         # Micro accounts get a modest bump over the configured risk, not a 4x-8x one:
         # 4% risk with a 45% exposure cap at 5x leverage was compounding losses fast.
         is_micro_crypto = is_crypto and self.total_equity < 25.0
-        risk_pct = max(settings.MAX_RISK_PER_TRADE_PCT, 0.015) if is_micro_crypto else settings.MAX_RISK_PER_TRADE_PCT
+        # Calibrate risk to 3.5% per trade on micro accounts (giving $0.21 risk on $6.00, strictly within 6.00% gate)
+        # to ensure winning trades yield meaningful profit ($0.35 - $0.55) rather than fractions of a cent
+        risk_pct = max(settings.MAX_RISK_PER_TRADE_PCT, 0.035) if is_micro_crypto else settings.MAX_RISK_PER_TRADE_PCT
         risk_amount = self.total_equity * risk_pct
         stop_distance = abs(decision.entry_price - decision.stop_loss) * contract_mult
 
@@ -120,9 +122,9 @@ class PositionSizer:
 
         raw_quantity = int(risk_amount / stop_distance) if stop_distance > 0 else 1
 
-        # 2. Maximum Capital Cap (20% on micro crypto accounts; 45% per position left no
-        # room for diversification and let 2-3 positions consume the whole account)
-        max_cap_pct = 0.20 if is_micro_crypto else settings.MAX_SINGLE_STOCK_EXPOSURE_PCT
+        # 2. Maximum Capital Cap (35% on micro crypto accounts allows ~$2.10 margin per trade on $6.00,
+        # allowing 2 concurrent diversified positions with ample cash safety buffer)
+        max_cap_pct = 0.35 if is_micro_crypto else settings.MAX_SINGLE_STOCK_EXPOSURE_PCT
         max_capital_for_asset = min(self.total_equity * max_cap_pct, avail * 0.95)
         max_qty_by_capital = int(max_capital_for_asset / effective_unit_cost) if effective_unit_cost > 0 else 0
 
