@@ -16,7 +16,7 @@ from guardian.models import (
 )
 from market.calendar import IndianMarketCalendar
 from orchestration.event_bus import SystemEventType, realtime_event_bus
-from risk.profit_math import LOCK_PROFIT_PCT, exit_adds_capital
+from risk.profit_math import expected_net_pnl, exit_pays_the_risk, planned_risk_usd, price_that_pays
 
 
 class PositionGuardianWorker:
@@ -344,66 +344,53 @@ class PositionGuardianWorker:
                 self._publish_guardian_alert(GuardianAction.STAGNATION_SCRATCH_EXIT, reason)
                 return GuardianAction.STAGNATION_SCRATCH_EXIT, reason
 
-        # 7. MULTI-TIERED HIGH-WATER MARK PROFIT RATCHET & TIGHT TRAILING STOP
-        # Ensures winning trades NEVER turn into losses:
-        # Tier 1 (+0.50% Peak): Lock +0.30% so the trailed stop still pays after fees
-        # Tier 2 (+1.00% Peak): Lock at least +0.60% profit (or keep >=60% of peak gain)
-        # Tier 3 (+1.50% Peak): Lock at least +1.00% profit
-        # Tier 4 (+2.00% Peak): Lock at least +1.50% profit
+        # 7. LOCK A WIN ONLY AFTER IT PAYS THE RISK
+        # A 0.3% stop used to book a few cents and count as a win, while the
+        # original stop still lost several times that. Until the peak covers
+        # one full stop-distance after fees, the stop stays where it was.
         target_sl = self.state.stop_loss
         effective_atr = min(atr, current_ltp * 0.015)
         px_decimals = 4 if is_crypto else 2
+        risk_usd = planned_risk_usd(
+            self.state.entry_price,
+            self.state.original_stop_loss or self.state.stop_loss,
+            self.state.quantity,
+            mult,
+        )
+        peak_px = self.state.lowest_price_seen if is_short else self.state.highest_price_seen
+        peak_net = expected_net_pnl(
+            self.state.entry_price, peak_px, self.state.quantity, mult, is_short,
+        )
 
         if is_short:
-            # SHORT: stop sits ABOVE price and ratchets DOWN as the short gains.
             profit_points = self.state.entry_price - current_ltp
-            peak_drop = self.state.entry_price - self.state.lowest_price_seen
-
-            if peak_gain_pct >= 2.0:
-                tier_sl = round(self.state.entry_price * 0.985, px_decimals)
-                giveback_sl = round(self.state.entry_price - (peak_drop * 0.60), px_decimals)
-                target_sl = min(target_sl, tier_sl, giveback_sl)
-            elif peak_gain_pct >= 1.5:
-                tier_sl = round(self.state.entry_price * 0.990, px_decimals)
-                giveback_sl = round(self.state.entry_price - (peak_drop * 0.60), px_decimals)
-                target_sl = min(target_sl, tier_sl, giveback_sl)
-            elif peak_gain_pct >= 1.0:
-                tier_sl = round(self.state.entry_price * 0.994, px_decimals)
-                giveback_sl = round(self.state.entry_price - (peak_drop * 0.60), px_decimals)
-                target_sl = min(target_sl, tier_sl, giveback_sl)
-            elif peak_gain_pct >= 0.50:
-                tier_sl = round(self.state.entry_price * (1.0 - LOCK_PROFIT_PCT), px_decimals)
-                target_sl = min(target_sl, tier_sl)
-
+            if risk_usd > 0 and peak_net >= risk_usd:
+                pay_px = round(price_that_pays(
+                    self.state.entry_price, self.state.quantity, mult, True, risk_usd,
+                ), px_decimals)
+                target_sl = min(target_sl, pay_px)
             if profit_points >= (effective_atr * 0.8):
                 tight_trailing_stop = round(self.state.lowest_price_seen + (self.trailing_atr_multiplier * effective_atr), px_decimals)
-                target_sl = min(target_sl, tight_trailing_stop)
-
+                if exit_pays_the_risk(
+                    self.state.entry_price, tight_trailing_stop, self.state.quantity, mult, True,
+                    self.state.original_stop_loss or self.state.stop_loss,
+                ):
+                    target_sl = min(target_sl, tight_trailing_stop)
             sl_improved = target_sl < self.state.stop_loss and target_sl > current_ltp
         else:
             profit_points = current_ltp - self.state.entry_price
-
-            if peak_gain_pct >= 2.0:
-                tier_sl = round(self.state.entry_price * 1.015, px_decimals)
-                giveback_sl = round(self.state.entry_price + ((self.state.highest_price_seen - self.state.entry_price) * 0.60), px_decimals)
-                target_sl = max(target_sl, tier_sl, giveback_sl)
-            elif peak_gain_pct >= 1.5:
-                tier_sl = round(self.state.entry_price * 1.010, px_decimals)
-                giveback_sl = round(self.state.entry_price + ((self.state.highest_price_seen - self.state.entry_price) * 0.60), px_decimals)
-                target_sl = max(target_sl, tier_sl, giveback_sl)
-            elif peak_gain_pct >= 1.0:
-                tier_sl = round(self.state.entry_price * 1.006, px_decimals)
-                giveback_sl = round(self.state.entry_price + ((self.state.highest_price_seen - self.state.entry_price) * 0.60), px_decimals)
-                target_sl = max(target_sl, tier_sl, giveback_sl)
-            elif peak_gain_pct >= 0.50:
-                tier_sl = round(self.state.entry_price * (1.0 + LOCK_PROFIT_PCT), px_decimals)
-                target_sl = max(target_sl, tier_sl)
-
-            # Dynamic Trailing Stop using calibrated ATR
+            if risk_usd > 0 and peak_net >= risk_usd:
+                pay_px = round(price_that_pays(
+                    self.state.entry_price, self.state.quantity, mult, False, risk_usd,
+                ), px_decimals)
+                target_sl = max(target_sl, pay_px)
             if profit_points >= (effective_atr * 0.8):
                 tight_trailing_stop = round(self.state.highest_price_seen - (self.trailing_atr_multiplier * effective_atr), px_decimals)
-                target_sl = max(target_sl, tight_trailing_stop)
-
+                if exit_pays_the_risk(
+                    self.state.entry_price, tight_trailing_stop, self.state.quantity, mult, False,
+                    self.state.original_stop_loss or self.state.stop_loss,
+                ):
+                    target_sl = max(target_sl, tight_trailing_stop)
             sl_improved = target_sl > self.state.stop_loss and target_sl < current_ltp
 
         if sl_improved:
@@ -427,12 +414,13 @@ class PositionGuardianWorker:
         return GuardianAction.HOLD, "Position within approved safety boundaries"
 
     def _exit_compounds(self, exit_mark: float, is_short: bool, multiplier: float) -> bool:
-        return exit_adds_capital(
+        return exit_pays_the_risk(
             entry=self.state.entry_price,
             exit_mark=exit_mark,
             quantity=self.state.quantity,
             multiplier=multiplier,
             is_short=is_short,
+            stop=self.state.original_stop_loss or self.state.stop_loss,
         )
 
     def _publish_guardian_alert(self, action: GuardianAction, reason: str):
