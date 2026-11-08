@@ -71,6 +71,14 @@ class MultiTimeframePositionAuditor:
         is_long = side.upper() != "SELL"
         pnl_pct = ((current_ltp - entry_price) / entry_price * 100.0) if is_long else ((entry_price - current_ltp) / entry_price * 100.0)
 
+        # Grace period: do not prematurely scratch a brand-new position during its first 5 minutes.
+        # Hard stop loss continues to protect capital 100% of the time, but this prevents
+        # immediate exits caused by normal 0.05% entry slippage or bid-ask spread.
+        if opened_at is not None:
+            age_secs = (datetime.now(UTC) - opened_at).total_seconds()
+            if age_secs < 300.0:
+                return False, f"Position grace period active ({int(age_secs)}s < 300s)"
+
         # 1. Fetch Multi-Timeframe Data Concurrently (1m, 5m, 1h, 1d)
         tasks = [
             provider.get_historical_ohlcv(symbol, interval="1m", period="1d"),
@@ -225,8 +233,9 @@ class MultiTimeframePositionAuditor:
         # -------------------------------------------------------------
         # F. FINAL DECISION SYNTHESIS
         # -------------------------------------------------------------
-        # If severity score >= 0.50 and position is currently underwater, exit immediately!
-        if severity_score >= 0.50 and pnl_pct < 0:
+        # Require high severity (>= 0.70) and meaningful loss (pnl_pct < -0.80%) before scratching,
+        # preventing micro-friction fee bleeds on normal noise.
+        if severity_score >= 0.70 and pnl_pct < -0.80:
             signals_str = "; ".join(invalidation_signals)
             reason = (
                 f"Multi-Timeframe AI Thesis Invalidation (Severity: {severity_score:.2f}/1.00, PnL: {pnl_pct:+.2f}%): "

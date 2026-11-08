@@ -36,14 +36,13 @@ def score_go_live(
 ) -> dict:
     """Return the paper-window status. A passing score is a review, not an order switch."""
     start = _parse_time(started_at) if not isinstance(started_at, datetime) else started_at
-    elapsed = 0.0
-    if start is not None:
-        elapsed = max(0.0, (now - start).total_seconds())
-    window_done = elapsed >= WINDOW_HOURS * 3600.0
-
     if start is None:
+        elapsed = 0.0
+        window_done = False
         in_window = []
     else:
+        elapsed = max(0.0, (now - start).total_seconds())
+        window_done = elapsed >= WINDOW_HOURS * 3600.0
         in_window = []
         for trade in trades:
             stamp = _parse_time(trade.get("timestamp"))

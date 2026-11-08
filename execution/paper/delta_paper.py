@@ -49,6 +49,7 @@ class DeltaPaperBroker(BaseBroker):
         self.taker_fee_pct = taker_fee_pct
         self.orders: dict[str, OrderExecution] = {}
         self.positions: dict[str, PositionSnapshot] = {}
+        self.closed_trades: list[dict[str, Any]] = []
         self.bracket_orders: dict[str, dict[str, Any]] = {}
         self.open_orders: dict[str, dict[str, Any]] = {}
         self.api_key = "paper_simulated_key"
@@ -84,6 +85,7 @@ class DeltaPaperBroker(BaseBroker):
                     k: o.model_dump(mode="json") if hasattr(o, "model_dump") else o.dict()
                     for k, o in self.orders.items()
                 },
+                "closed_trades": self.closed_trades,
             }
             with open(self.state_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
@@ -104,6 +106,7 @@ class DeltaPaperBroker(BaseBroker):
                 self.positions[k] = PositionSnapshot.model_validate(p_raw)
             for k, o_raw in data.get("orders", {}).items():
                 self.orders[k] = OrderExecution.model_validate(o_raw)
+            self.closed_trades = data.get("closed_trades", [])
         except Exception as e:
             logger.debug(f"[DeltaPaperBroker] State load notice: {e}")
 
@@ -224,6 +227,7 @@ class DeltaPaperBroker(BaseBroker):
 
         # 1. Simulate Slippage (adverse execution price) with adaptive precision
         decimals = 8 if base_price < 0.01 else (6 if base_price < 1.0 else 4)
+        order_id = f"PAP-DLT-{uuid.uuid4().hex[:8].upper()}"
         if order.action == TradeAction.BUY:
             executed_price = round(base_price * (1.0 + self.slippage_pct), decimals)
         else:
@@ -275,6 +279,25 @@ class DeltaPaperBroker(BaseBroker):
             released_margin = pos_turnover / leverage
             self.used_margin = max(0.0, self.used_margin - released_margin)
             self.available_margin += (released_margin + net_pnl)
+
+            exit_reason = getattr(order, "reason", None) or ("TARGET_EXIT" if net_pnl > 0 else "STOP_LOSS_EXIT")
+            trade_record = {
+                "trade_id": order_id,
+                "symbol": order.symbol,
+                "side": pos.side,
+                "quantity": order.quantity,
+                "contract_multiplier": mult,
+                "entry_price": round(pos.entry_price, 6),
+                "exit_price": round(executed_price, 6),
+                "exit_reason": exit_reason,
+                "gross_pnl": round(gross_pnl, 4),
+                "net_pnl": round(net_pnl, 4),
+                "total_fee": round(brokerage_fee, 4),
+                "account_equity_after": round(self.available_margin + self.used_margin, 4),
+                "timestamp": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            }
+            self.closed_trades.append(trade_record)
+            pos.realized_pnl = round((pos.realized_pnl or 0.0) + net_pnl, 4)
 
             pos.quantity -= order.quantity
             if pos.quantity <= 0:
