@@ -356,7 +356,23 @@ async function loadCandles(symbol, interval) {
         if (livePriceEl) livePriceEl.innerText = formatPx(last.close);
         const regimeEl = document.getElementById('regimeBadge');
         if (regimeEl && last.ema20 && last.ema50) {
-          regimeEl.innerText = last.ema20 >= last.ema50 ? 'EMA20 ABOVE EMA50' : 'EMA20 BELOW EMA50';
+          const isBull = last.ema20 >= last.ema50;
+          regimeEl.innerText = isBull ? 'EMA20 ABOVE EMA50' : 'EMA20 BELOW EMA50';
+          const trendEl = document.getElementById('regimeTrend');
+          if (trendEl) {
+            trendEl.innerText = isBull ? '↑ Bullish' : '↓ Bearish';
+            trendEl.className = isBull ? 'regime-stat-val text-green' : 'regime-stat-val text-red';
+          }
+          const confEl = document.getElementById('regimeConfidence');
+          if (confEl && last.close > 0) {
+            const spreadRatio = Math.min(0.99, Math.max(0.55, (Math.abs(last.ema20 - last.ema50) / last.close) * 100 + 0.50));
+            confEl.innerText = spreadRatio.toFixed(2);
+          }
+          const condEl = document.getElementById('regimeCondition');
+          if (condEl) {
+            condEl.innerText = isBull ? 'Favorable' : 'Cautious';
+            condEl.className = isBull ? 'regime-stat-val text-green' : 'regime-stat-val text-yellow';
+          }
         }
         const volEl = document.getElementById('regimeVolatility');
         if (volEl && last.close > 0 && last.atr14) {
@@ -973,6 +989,14 @@ async function fetchEvaluationStatus() {
       document.getElementById('kpiDailyLoss').innerText = `${data.daily_loss_realized_pct.toFixed(2)}%`;
       document.getElementById('kpiDailyLossLimit').innerText = `(Limit: ≤ ${data.daily_loss_limit_pct.toFixed(2)}%)`;
       document.getElementById('riskDailyRealized').innerText = `${data.daily_loss_realized_pct.toFixed(2)}% / ${data.daily_loss_limit_pct.toFixed(2)}%`;
+      const mtmIntraEl = document.getElementById('riskMtmIntraday');
+      if (mtmIntraEl) {
+        mtmIntraEl.innerText = `${data.daily_loss_realized_pct.toFixed(2)}% / ${data.daily_loss_limit_pct.toFixed(2)}%`;
+      }
+      const aggRiskEl = document.getElementById('riskAggregateOpen');
+      if (aggRiskEl) {
+        aggRiskEl.innerText = `${(data.drawdown_pct || 0).toFixed(2)}%`;
+      }
       if (data.drawdown_pct !== undefined) {
         document.getElementById('kpiMaxDrawdown').innerText = `${Number(data.drawdown_pct).toFixed(2)}%`;
         document.getElementById('riskCurrentDd').innerText = `${Number(data.drawdown_pct).toFixed(2)}%`;
@@ -1093,6 +1117,8 @@ const CORE_AGENTS = [
 ];
 
 function renderAgentRosters() {
+  const badgeEl = document.getElementById('agentCountBadge');
+  if (badgeEl) badgeEl.innerText = `${CORE_AGENTS.length} Active`;
   const miniContainer = document.getElementById('agentsMiniContainer');
   if (miniContainer) {
     miniContainer.innerHTML = CORE_AGENTS.map(a => `

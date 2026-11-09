@@ -12,8 +12,14 @@ _cached_brokers: dict[str, BaseBroker] = {}
 
 def get_active_broker(broker_name: str | None = None) -> BaseBroker:
     """Instantiates or returns the cached singleton production or paper broker adapter."""
-    default_name = "delta" if (settings.EXCHANGE or "").lower() == "delta" else (settings.BROKER_NAME or "angelone")
+    is_delta = (
+        (settings.EXCHANGE or "").lower() in ["delta", "crypto"]
+        or (settings.BROKER_NAME or "").lower() in ["delta", "delta_exchange"]
+    )
+    default_name = "delta" if is_delta else (settings.BROKER_NAME or "angelone")
     resolved_name = (broker_name or default_name).lower()
+    if is_delta and resolved_name in ["nse", "angelone", "bootstrap"]:
+        resolved_name = "delta"
 
     if not settings.LIVE_TRADING_ENABLED or settings.TRADING_MODE == TradingMode.PAPER:
         cache_key = f"paper_{resolved_name}"

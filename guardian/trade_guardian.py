@@ -293,7 +293,7 @@ class MasterTradeGuardian:
                                 exchange=worker.state.exchange,
                                 action=exit_action,
                                 quantity=worker.state.quantity,
-                                price=None,  # market order: protective exits must fill, not rest as stale limits
+                                price=ltp if (ltp and ltp > 0) else None,  # market exit executes at evaluated tick
                                 stop_loss=0.0,
                                 target=0.0,
                                 decision_id=f"GRD-{action.value}",

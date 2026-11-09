@@ -396,11 +396,12 @@ async def _ensure_trading_daemon():
     from market.providers.yfinance_provider import YFinanceMarketDataProvider
     from apps.daemon.state_machine import AutonomousTradingDaemon
 
-    broker = get_active_broker(settings.EXCHANGE.lower() if settings.EXCHANGE else "delta")
+    is_crypto = (settings.EXCHANGE or "").lower() in {"delta", "crypto"} or (settings.BROKER_NAME or "").lower() in {"delta", "delta_exchange"}
+    broker = get_active_broker("delta" if is_crypto else None)
     funds = await broker.get_funds()
     cap = float(funds.get("total_capital") or settings.INITIAL_CAPITAL or 0.0)
     provider = YFinanceMarketDataProvider()
-    universe = "delta" if (settings.EXCHANGE or "").lower() in {"delta", "crypto"} else "bootstrap"
+    universe = "delta" if is_crypto else "bootstrap"
     scanner = QuantMarketScanner(provider=provider, universe=universe, max_concurrency=5)
     _daemon_instance = AutonomousTradingDaemon(
         scanner=scanner,

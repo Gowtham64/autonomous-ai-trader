@@ -224,6 +224,12 @@ class DeltaPaperBroker(BaseBroker):
             if (order.price and order.price > 0)
             else (order.stop_loss if (order.stop_loss and order.stop_loss > 0) else pos_price)
         )
+        if (not order.price or order.price <= 0) and pos:
+            dec_id = getattr(order, "decision_id", "") or ""
+            if "TARGET" in dec_id and pos.target_1 and pos.target_1 > 0:
+                base_price = pos.target_1
+            elif ("STOP" in dec_id or "HARD_STOP" in dec_id) and pos.stop_loss and pos.stop_loss > 0:
+                base_price = pos.stop_loss
 
         # 1. Simulate Slippage (adverse execution price) with adaptive precision
         decimals = 8 if base_price < 0.01 else (6 if base_price < 1.0 else 4)
