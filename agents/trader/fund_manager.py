@@ -27,7 +27,9 @@ class FundManagerAgent:
         available_capital: float = 0.0,
     ) -> TradeDecision:
         analysis_id = f"ANL-{uuid.uuid4().hex[:8].upper()}"
-        logger.info(f"Fund Manager evaluating trade decision for {signal.symbol} [{analysis_id}] (Live Capital: ₹{available_capital:,.2f})")
+        is_crypto = ("USD" in signal.symbol.upper()) or (signal.exchange and signal.exchange.upper() in ["DELTA", "CRYPTO"])
+        cs = "$" if is_crypto else "₹"
+        logger.info(f"Fund Manager evaluating trade decision for {signal.symbol} [{analysis_id}] (Live Capital: {cs}{available_capital:,.2f})")
 
         # Extract multi-domain specialist observations
         tech_report = next((r for r in reports if "Technical" in r.agent_name), None)
@@ -52,8 +54,8 @@ class FundManagerAgent:
         )
 
         user_prompt = (
-            f"Asset: {signal.symbol} (LTP: ₹{signal.ltp}, Sector: {signal.sector})\n"
-            f"Deployable Capital: ₹{available_capital:,.2f}\n\n"
+            f"Asset: {signal.symbol} (LTP: {cs}{signal.ltp}, Sector: {signal.sector})\n"
+            f"Deployable Capital: {cs}{available_capital:,.2f}\n\n"
             f"1. Company Fundamentals & Growth History:\n"
             f"   - Stance: {fund_report.stance if fund_report else 'NEUTRAL'}\n"
             f"   - Insights: {', '.join(fund_report.key_observations) if fund_report else 'N/A'}\n\n"
@@ -67,7 +69,7 @@ class FundManagerAgent:
             f"4. Kronos Candlestick Foundation Model Forecast:\n"
             f"   - Model Stance: {kronos_report.stance if kronos_report else 'N/A'}\n"
             f"   - Predicted Trajectory: {', '.join(kronos_report.key_observations) if kronos_report else 'N/A'}\n"
-            f"   - Suggested Stop: ₹{kronos_report.suggested_stop if kronos_report else 'N/A'} | Target: ₹{kronos_report.suggested_target if kronos_report else 'N/A'}\n\n"
+            f"   - Suggested Stop: {cs}{kronos_report.suggested_stop if kronos_report else 'N/A'} | Target: {cs}{kronos_report.suggested_target if kronos_report else 'N/A'}\n\n"
             f"5. Adversarial Debate Consensus:\n"
             f"   - Score: {debate.consensus_score:+.2f}\n"
             f"   - Bull Thesis: {debate.bull_thesis}\n"

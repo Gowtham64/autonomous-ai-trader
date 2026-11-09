@@ -82,7 +82,8 @@ class AITreasury:
         )
         self.ledger.append(ledger_entry)
 
-        logger.info(f"[Treasury] Operating expense recorded: ₹{cost:.2f} ({description}). Balance: ₹{self.current_capital:.2f}")
+        cs = "$" if (float(settings.INITIAL_CAPITAL) < 100.0 or (settings.EXCHANGE or "").lower() in ["delta", "crypto"]) else "₹"
+        logger.info(f"[Treasury] Operating expense recorded: {cs}{cost:.2f} ({description}). Balance: {cs}{self.current_capital:.2f}")
 
     def record_trade_result(
         self,
@@ -92,6 +93,7 @@ class AITreasury:
     ) -> None:
         """Records completed trade P&L, deducts fees, and allocates profits to treasury buckets."""
         net_trade = pnl - broker_fees
+        cs = "$" if (float(settings.INITIAL_CAPITAL) < 100.0 or (settings.EXCHANGE or "").lower() in ["delta", "crypto"]) else "₹"
         self.realized_pnl += pnl
         self.total_operating_expenses += broker_fees
         self.current_capital += net_trade
@@ -112,8 +114,8 @@ class AITreasury:
             self.buckets.trading_capital += reinvest_share
             self.buckets.reinvestment_capital += reinvest_share
             logger.info(
-                f"[Treasury Allocation] Distributed profit ₹{net_trade:.2f}: "
-                f"Upgrade Fund +₹{up_share:.2f}, Emergency +₹{em_share:.2f}, Reinvest +₹{reinvest_share:.2f}"
+                f"[Treasury Allocation] Distributed profit {cs}{net_trade:.2f}: "
+                f"Upgrade Fund +{cs}{up_share:.2f}, Emergency +{cs}{em_share:.2f}, Reinvest +{cs}{reinvest_share:.2f}"
             )
         else:
             self.buckets.trading_capital = max(0.0, self.buckets.trading_capital + net_trade)
@@ -124,7 +126,7 @@ class AITreasury:
         entry = TreasuryLogEntry(
             entry_type="TRADE_PNL",
             amount=net_trade,
-            description=f"Trade {symbol}: Gross P&L ₹{pnl:.2f}, Fees ₹{broker_fees:.2f}",
+            description=f"Trade {symbol}: Gross P&L {cs}{pnl:.2f}, Fees {cs}{broker_fees:.2f}",
             balance_after=round(self.current_capital, 2),
         )
         self.history.append(entry)
@@ -137,13 +139,13 @@ class AITreasury:
             trading_pnl=pnl,
             operating_cost=broker_fees,
             balance_after=round(self.current_capital, 2),
-            description=f"Closed position on {symbol} (Gross ₹{pnl:.2f}, Fees ₹{broker_fees:.2f})",
+            description=f"Closed position on {symbol} (Gross {cs}{pnl:.2f}, Fees {cs}{broker_fees:.2f})",
         )
         self.ledger.append(ledger_entry)
 
         logger.info(
-            f"[Treasury] Trade result recorded for {symbol}: Net ₹{net_trade:.2f}. "
-            f"Current Capital: ₹{self.current_capital:.2f}"
+            f"[Treasury] Trade result recorded for {symbol}: Net {cs}{net_trade:.2f}. "
+            f"Current Capital: {cs}{self.current_capital:.2f}"
         )
 
     def _evaluate_sustainability_state(self) -> None:

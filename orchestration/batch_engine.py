@@ -52,7 +52,9 @@ class MultiStockOrchestrator:
         available_capital: float = 0.0,
     ) -> CandidateEvaluation:
         """Evaluates one candidate through the full research, debate, and fund manager decision loop."""
-        logger.info(f"[Batch Engine] Starting research & debate for {signal.symbol} (LTP: ₹{signal.ltp}, Avail Margin: ₹{available_capital:,.2f})...")
+        is_crypto = getattr(signal, "exchange", "").upper() == "DELTA" or "USD" in signal.symbol
+        c_sym = "$" if is_crypto else "₹"
+        logger.info(f"[Batch Engine] Starting research & debate for {signal.symbol} (LTP: {c_sym}{signal.ltp}, Avail Margin: {c_sym}{available_capital:,.2f})...")
 
         # 1. Specialist research desk (Technical, Fundamental, News, Macro, Kronos, BNF, Jhunjhunwala, Livermore)
         reports = await self.research_desk.conduct_research(
@@ -94,7 +96,9 @@ class MultiStockOrchestrator:
         if not candidates:
             return []
 
-        logger.info(f"[Batch Engine] Evaluating {len(candidates)} candidate stocks concurrently (Live Margin: ₹{available_capital:,.2f})...")
+        is_crypto = any(getattr(c, "exchange", "").upper() == "DELTA" or "USD" in c.symbol for c in candidates)
+        c_sym = "$" if is_crypto else "₹"
+        logger.info(f"[Batch Engine] Evaluating {len(candidates)} candidate stocks concurrently (Live Margin: {c_sym}{available_capital:,.2f})...")
         semaphore = asyncio.Semaphore(self.max_concurrency)
 
         async def _bounded_eval(cand: CandidateSignal) -> CandidateEvaluation:
