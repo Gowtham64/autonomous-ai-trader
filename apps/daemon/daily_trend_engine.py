@@ -70,6 +70,7 @@ class TrendPosition:
     opened_at: str
     multiplier: float
     last_trailed_date: str = ""
+    initial_stop: float = 0.0  # stop at entry: defines 1R for comparing with the backtest
 
 
 @dataclass
@@ -158,7 +159,76 @@ class DailyTrendEngine:
         summary["open_positions"] = {s: {"qty": p.quantity, "entry": p.entry_price, "stop": p.stop}
                                      for s, p in self.state.positions.items()}
         summary["kill_switch"] = kill_switch.reason if kill_switch.is_engaged else None
+        try:
+            await self._write_status(summary, now)
+        except Exception as e:  # the dashboard is a convenience; never let it break trading
+            logger.debug(f"[Daily Trend] Status write note: {e}")
         return summary
+
+    # ------------------------------------------------------------- dashboard
+
+    async def _write_status(self, summary: dict, now: pd.Timestamp) -> None:
+        """Snapshot for the dashboard (run_trend_dashboard.py): data/daily_trend_status.json
+        plus one equity point per hour in data/daily_trend_equity.csv."""
+        f = await self.broker.get_funds()
+        cash = float(f.get("total_capital") or 0.0)
+        start = float(f.get("starting_capital") or 0.0) or (settings.DAILY_TREND_PAPER_CAPITAL if not self.is_live else 0.0)
+        positions, unreal_total = [], 0.0
+        for sym, pos in self.state.positions.items():
+            mark = await self._safe_mark(sym)
+            is_short = pos.side == "SELL"
+            unit = pos.quantity * pos.multiplier
+            unreal = (((pos.entry_price - mark) if is_short else (mark - pos.entry_price)) * unit) if mark else 0.0
+            risk = abs(pos.entry_price - pos.stop) * unit
+            unreal_total += unreal
+            positions.append({
+                "symbol": sym, "side": pos.side, "qty": pos.quantity, "entry": pos.entry_price,
+                "mark": mark, "stop": pos.stop, "unrealized_usd": round(unreal, 4),
+                "locked_in_usd": round(((pos.entry_price - pos.stop) if is_short else (pos.stop - pos.entry_price)) * unit, 4),
+                "risk_to_stop_usd": round(risk, 4), "opened_at": pos.opened_at,
+            })
+        # Delta's live balance (net_equity) already includes open P&L; the paper broker's does not.
+        equity = cash if self.is_live else cash + unreal_total
+        status = {
+            "updated_at": now.isoformat(),
+            "mode": summary["mode"],
+            "poll_minutes": settings.DAILY_TREND_POLL_MINUTES,
+            "rule": self.p.label(),
+            "symbols": self.symbols,
+            "risk_pct": settings.DAILY_TREND_RISK_PCT,
+            "starting_capital": start,
+            "cash_equity": round(cash, 4),
+            "equity": round(equity, 4),
+            "peak_equity": round(self.state.peak_equity, 4),
+            "drawdown_pct": summary.get("drawdown_pct", 0.0),
+            "kill_switch": summary.get("kill_switch"),
+            "realized_edge": summary.get("realized_edge"),
+            "last_daily_bar": self.state.last_daily_bar,
+            "positions": positions,
+            "last_cycle": {k: summary.get(k) for k in ("entries", "exits", "stops_moved", "skipped")},
+        }
+        out = self.state_path.parent / "daily_trend_status.json"
+        tmp = out.with_suffix(".tmp")
+        tmp.write_text(json.dumps(status, indent=2, default=str))
+        os.replace(tmp, out)
+
+        eq_path = self.state_path.parent / "daily_trend_equity.csv"
+        hour = now.floor("h").isoformat()
+        last = ""
+        if eq_path.exists():
+            with open(eq_path, "rb") as fh:
+                try:
+                    fh.seek(-200, os.SEEK_END)
+                except OSError:
+                    fh.seek(0)
+                tail = fh.read().decode(errors="ignore").strip().splitlines()
+                last = tail[-1].split(",")[0] if tail else ""
+        if last != hour or summary["entries"] or summary["exits"]:
+            new = not eq_path.exists()
+            with open(eq_path, "a") as fh:
+                if new:
+                    fh.write("time,equity,cash_equity,open_positions\n")
+                fh.write(f"{hour},{equity:.4f},{cash:.4f},{len(positions)}\n")
 
     # ------------------------------------------------------------------- risk
 
@@ -388,7 +458,7 @@ class DailyTrendEngine:
         # Stop is measured from the actual fill, as in the backtest.
         stop = round(initial_stop(fill, v.atr, self.p, is_short), 8)
         pos = TrendPosition(sym, side, qty, fill, stop, fill, _d(v.bar_date),
-                            self.now_fn().isoformat(), float(mult))
+                            self.now_fn().isoformat(), float(mult), initial_stop=stop)
         self.state.positions[sym] = pos
         self.state.save(self.state_path)  # persist before anything else can fail
         await self._set_exchange_stop(pos)
@@ -434,11 +504,13 @@ class DailyTrendEngine:
         gross = ((pos.entry_price - exit_price) if is_short else (exit_price - pos.entry_price)) * unit
         fees = TAKER_FEE_PCT * (pos.entry_price + exit_price) * unit
         net = round(gross - fees, 6)
+        init_risk = abs(pos.entry_price - (pos.initial_stop or pos.stop)) * unit
+        r_mult = round(net / init_risk, 3) if init_risk > 0 else 0.0
         closed_at = self.now_fn()
         held_s = max(0.0, (closed_at - pd.Timestamp(pos.opened_at)).total_seconds())
         self.closed.append({"symbol": pos.symbol, "side": pos.side, "opened_at": pos.opened_at,
                             "closed_at": closed_at.isoformat(), "entry": pos.entry_price,
-                            "exit": exit_price, "reason": reason, "net_usd": net})
+                            "exit": exit_price, "reason": reason, "net_usd": net, "r": r_mult})
         msg = f"{pos.symbol} {reason} @ {exit_price:.6g} net ${net:+.4f}"
         summary["exits"].append(msg)
         logger.info(f"🏁 [Daily Trend] Closed {msg}")
@@ -447,7 +519,8 @@ class DailyTrendEngine:
                 await self.journal_fn(
                     symbol=pos.symbol, entry_price=pos.entry_price, exit_price=exit_price, pnl=net,
                     exit_reason=reason, holding_period_seconds=held_s, market_regime=STRATEGY_TAG,
-                    reflection_notes=f"side={pos.side} qty={pos.quantity} mult={pos.multiplier} rule={self.p.label()}",
+                    reflection_notes=(f"side={pos.side} qty={pos.quantity} mult={pos.multiplier} r={r_mult} "
+                                      f"opened={pos.opened_at} rule={self.p.label()}"),
                 )
             except Exception as e:
                 logger.error(f"[Daily Trend] Journal write failed for {pos.symbol}: {e}")

@@ -42,6 +42,17 @@ python run_daily_trend.py          # loop (checks every 15 minutes)
 It acts once a day, shortly after the daily candle closes (00:00 UTC = 05:30 IST).
 Between closes it only watches stops. Logs go to `logs/daily_trend.log`.
 
+### Dashboard
+
+```bash
+.venv/bin/python run_trend_dashboard.py   # opens http://localhost:8787
+```
+
+Shows equity and its curve, drawdown, open positions with their stops, every closed
+trade (in $ and R), live results next to the backtest's, and what the last check did.
+It's read-only, refreshes every minute and only works on this computer. It warns you if
+the bot has stopped or the kill switch is engaged. Stopping the dashboard doesn't stop the bot.
+
 ### Paper first (default)
 
 Unless all three of these are set in `.env`, the engine trades an **isolated $500 paper account**
