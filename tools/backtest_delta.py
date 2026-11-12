@@ -216,28 +216,64 @@ def _price_for_net(entry: float, is_short: bool, net_frac: float) -> float:
     return entry * (1 + f + net_frac) / ((1 - s) * (1 - f))
 
 
-def simulate(symbol: str, h1: pd.DataFrame, sig: pd.DataFrame, min_score: float) -> list[Trade]:
+@dataclass(frozen=True)
+class Params:
+    """Strategy levers the backtest can vary. Defaults = the live bot's current rules."""
+    min_score: float = 100.0
+    stop_atr: float = STOP_ATR_MULT       # stop = min(stop_atr x daily ATR, stop_max_pct x price)
+    stop_max_pct: float = STOP_MAX_PCT
+    target_r: float = TARGET_R
+    side: str = "both"                    # both | long | short
+    cooldown_h: int = 0                   # hours to wait after an exit before re-entering
+    ratchet: bool = True                  # breakeven at 1R, +1R at 1.8R
+
+    def label(self) -> str:
+        return (f"score>={self.min_score:g} stop={self.stop_atr:g}xATR(max {self.stop_max_pct*100:g}%) "
+                f"tgt={self.target_r:g}R side={self.side} cool={self.cooldown_h}h ratchet={'on' if self.ratchet else 'off'}")
+
+
+def simulate(
+    symbol: str,
+    h1: pd.DataFrame,
+    sig: pd.DataFrame,
+    params: Params | float = Params(),
+    start: pd.Timestamp | None = None,
+    end: pd.Timestamp | None = None,
+) -> list[Trade]:
+    """Replay the rules. Entries are only taken on signals in [start, end); a trade
+    opened inside the window may finish after `end` (its outcome belongs to the window)."""
+    if not isinstance(params, Params):  # backwards compatible: simulate(..., min_score)
+        params = Params(min_score=float(params))
+    p = params
     trades: list[Trade] = []
     idx = h1.index
     o, hi, lo, c = (h1[k].to_numpy() for k in ("open", "high", "low", "close"))
     score = sig["score"].to_numpy()
     direction = sig["direction"].to_numpy()
     atr_d = sig["atr_d"].to_numpy()
+    allowed = np.ones(len(h1), dtype=bool)
+    if start is not None:
+        allowed &= (idx >= start)
+    if end is not None:
+        allowed &= (idx < end)
 
     i = 0
     n = len(h1)
     while i < n - 1:
-        if not (score[i] >= min_score) or not (atr_d[i] > 0):
+        if not allowed[i] or not (score[i] >= p.min_score) or not (atr_d[i] > 0):
             i += 1
             continue
         is_short = direction[i] == "SHORT"
+        if (p.side == "long" and is_short) or (p.side == "short" and not is_short):
+            i += 1
+            continue
         j = i + 1  # enter on next bar's open
         raw = o[j]
         entry = raw * (1 - ENTRY_SLIPPAGE_PCT) if is_short else raw * (1 + ENTRY_SLIPPAGE_PCT)
-        stop_dist = min(STOP_ATR_MULT * atr_d[i], STOP_MAX_PCT * raw)
+        stop_dist = min(p.stop_atr * atr_d[i], p.stop_max_pct * raw)
         stop = entry + stop_dist if is_short else entry - stop_dist
         initial_stop = stop
-        target = entry - TARGET_R * stop_dist if is_short else entry + TARGET_R * stop_dist
+        target = entry - p.target_r * stop_dist if is_short else entry + p.target_r * stop_dist
         risk_frac = stop_dist / entry  # planned risk as fraction of notional (before costs)
         peak_net = -1.0
         exit_px, reason, k = None, None, j
@@ -252,15 +288,16 @@ def simulate(symbol: str, h1: pd.DataFrame, sig: pd.DataFrame, min_score: float)
             if (is_short and lo[k] <= target) or (not is_short and hi[k] >= target):
                 exit_px, reason = target, "TARGET"
                 break
-            # Update ratchet at bar close, effective from the next bar.
-            best = lo[k] if is_short else hi[k]
-            peak_net = max(peak_net, _net_return(entry, best, is_short))
-            new_stop = stop
-            if peak_net >= LOCK_1R_AT_R * risk_frac:
-                new_stop = _price_for_net(entry, is_short, risk_frac)
-            elif peak_net >= BREAKEVEN_AT_R * risk_frac:
-                new_stop = _price_for_net(entry, is_short, 0.0)
-            stop = min(stop, new_stop) if is_short else max(stop, new_stop)
+            if p.ratchet:
+                # Update ratchet at bar close, effective from the next bar.
+                best = lo[k] if is_short else hi[k]
+                peak_net = max(peak_net, _net_return(entry, best, is_short))
+                new_stop = stop
+                if peak_net >= LOCK_1R_AT_R * risk_frac:
+                    new_stop = _price_for_net(entry, is_short, risk_frac)
+                elif peak_net >= BREAKEVEN_AT_R * risk_frac:
+                    new_stop = _price_for_net(entry, is_short, 0.0)
+                stop = min(stop, new_stop) if is_short else max(stop, new_stop)
 
         if exit_px is None:
             exit_px, reason, k = c[n - 1], "END_OF_DATA", n - 1
@@ -278,7 +315,7 @@ def simulate(symbol: str, h1: pd.DataFrame, sig: pd.DataFrame, min_score: float)
             net_pct=round(net * 100, 4),
             r_multiple=round(net / risk_frac, 3) if risk_frac > 0 else 0.0,
         ))
-        i = k + 1  # one position per symbol; look for the next signal after exit
+        i = k + 1 + max(0, int(p.cooldown_h))  # one position per symbol, then optional cooldown
     return trades
 
 
@@ -323,31 +360,139 @@ def verdict(s: dict) -> str:
     return "UNPROVEN: expectancy is not distinguishable from zero after costs. Do not trade this live yet."
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--symbols", nargs="*", help="Delta perpetual symbols, e.g. XRPUSD DOGEUSD")
-    ap.add_argument("--top", type=int, default=10, help="If no --symbols: use top-N perpetuals by turnover")
-    ap.add_argument("--days", type=int, default=120)
-    ap.add_argument("--min-score", type=float, default=100.0, help="Scanner score needed to enter (max ~145)")
-    ap.add_argument("--csv", help="Write every trade to this CSV")
-    args = ap.parse_args()
+# --------------------------------------------------------------------- universe/cache
 
-    symbols = args.symbols or top_perpetuals(args.top)
-    print(f"Costs per side: taker+GST {TAKER_FEE_PCT*100:.4f}%, slippage {ENTRY_SLIPPAGE_PCT*100:.3f}% entry / {EXIT_SLIPPAGE_PCT*100:.3f}% exit")
-    all_trades: list[Trade] = []
+# Established, liquid coins. New listings and tokenized stocks/metals behaved worst.
+MAJORS = ["BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "BNBUSD", "DOGEUSD", "ADAUSD",
+          "LINKUSD", "AVAXUSD", "LTCUSD", "BCHUSD", "DOTUSD", "SUIUSD", "NEARUSD", "TRXUSD"]
+
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "backtest_cache")
+
+
+def load_candles(symbol: str, days: int, refresh: bool = False) -> pd.DataFrame:
+    """Hourly candles, cached under data/backtest_cache so repeated runs don't re-download."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    path = os.path.join(CACHE_DIR, f"{symbol}_{days}d.csv")
+    if not refresh and os.path.exists(path) and (time.time() - os.path.getmtime(path)) < 12 * 3600:
+        df = pd.read_csv(path, index_col=0)
+        df.index = pd.to_datetime(df.index, utc=True)
+        return df
+    df = fetch_hourly_candles(symbol, days)
+    if not df.empty:
+        df.to_csv(path)
+    return df
+
+
+def _prepare(symbols: list[str], days: int, refresh: bool) -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
+    data = {}
     for sym in symbols:
         try:
-            h1 = fetch_hourly_candles(sym, args.days + 60)  # +60d warm-up for daily EMA50
+            h1 = load_candles(sym, days + 60, refresh)  # +60d warm-up for daily EMA50
         except Exception as e:
             print(f"  {sym}: data error ({e})")
             continue
-        if len(h1) < 24 * 70:
-            print(f"  {sym}: not enough history ({len(h1)} hourly bars)")
+        if len(h1) < 24 * (days + 50):
+            print(f"  {sym}: skipped, only {len(h1) // 24} days of history (needs ~{days + 50})")
             continue
-        sig = compute_signals(h1)
-        cutoff = h1.index[-1] - pd.Timedelta(days=args.days)
-        sig.loc[sig.index < cutoff, "score"] = np.nan
-        t = simulate(sym, h1, sig, args.min_score)
+        data[sym] = (h1, compute_signals(h1))
+    return data
+
+
+def run_all(data, params: Params, start=None, end=None) -> list[Trade]:
+    out: list[Trade] = []
+    for sym, (h1, sig) in data.items():
+        out.extend(simulate(sym, h1, sig, params, start, end))
+    return out
+
+
+def sweep_grid() -> list[Params]:
+    grid = []
+    for min_score in (100.0, 120.0):
+        for stop_atr, stop_max in ((0.8, 0.015), (1.0, 0.03), (1.5, 0.05), (2.0, 0.08)):
+            for target_r in (1.5, 2.2, 3.0):
+                for side in ("both", "long", "short"):
+                    for cooldown in (0, 24):
+                        for ratchet in (True, False):
+                            grid.append(Params(min_score, stop_atr, stop_max, target_r, side, cooldown, ratchet))
+    return grid
+
+
+def run_sweep(data, days: int, test_frac: float, min_trades: int) -> None:
+    """Choose on the training period only; judge on the untouched test period."""
+    last = max(h1.index[-1] for h1, _ in data.values())
+    start = last - pd.Timedelta(days=days)
+    split = last - pd.Timedelta(days=int(days * test_frac))
+    print(f"\nTraining window: {start.date()} -> {split.date()} | Test window (never used to choose): {split.date()} -> {last.date()}")
+
+    rows = []
+    grid = sweep_grid()
+    for k, p in enumerate(grid, 1):
+        s = summarize(run_all(data, p, start, split))
+        if s.get("trades", 0) >= min_trades:
+            rows.append((s["expectancy_R"], p, s))
+        if k % 50 == 0:
+            print(f"  ...{k}/{len(grid)} settings tested")
+    if not rows:
+        print("No setting produced enough training trades. Try more symbols or days.")
+        return
+    rows.sort(key=lambda x: x[0], reverse=True)
+
+    print(f"\n=== TOP 5 ON TRAINING DATA (of {len(grid)} settings, >= {min_trades} trades) ===")
+    for exp_r, p, s in rows[:5]:
+        print(f"  expR={exp_r:+.3f}  trades={s['trades']:4d}  win%={s['win_rate_pct']:5.1f}  PF={s['profit_factor']}  | {p.label()}")
+
+    best_p = rows[0][1]
+    test = summarize(run_all(data, best_p, split, None))
+    base = summarize(run_all(data, Params(), split, None))
+    print("\n=== BEST TRAINING SETTING, JUDGED ON UNSEEN TEST DATA ===")
+    print("Setting:", best_p.label())
+    print(json.dumps(test, indent=2))
+    print("Current live rules on the same test data: "
+          f"expR={base.get('expectancy_R')} over {base.get('trades', 0)} trades")
+    print("\nVERDICT (test data):", verdict(test))
+    print("Note: the best of many training settings always looks good; only the test result counts.")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--symbols", nargs="*", help="Delta perpetual symbols, e.g. XRPUSD DOGEUSD")
+    ap.add_argument("--majors", action="store_true", help="Use the built-in list of established liquid coins")
+    ap.add_argument("--top", type=int, default=10, help="If no --symbols/--majors: top-N perpetuals by turnover")
+    ap.add_argument("--days", type=int, default=180)
+    ap.add_argument("--min-score", type=float, default=100.0, help="Scanner score needed to enter (max ~145)")
+    ap.add_argument("--stop-atr", type=float, default=STOP_ATR_MULT)
+    ap.add_argument("--stop-max-pct", type=float, default=STOP_MAX_PCT, help="e.g. 0.05 for 5%%")
+    ap.add_argument("--target-r", type=float, default=TARGET_R)
+    ap.add_argument("--side", choices=["both", "long", "short"], default="both")
+    ap.add_argument("--cooldown-h", type=int, default=0)
+    ap.add_argument("--no-ratchet", action="store_true")
+    ap.add_argument("--sweep", action="store_true", help="Test a grid of settings; pick on training data, judge on test data")
+    ap.add_argument("--test-frac", type=float, default=1 / 3, help="Share of --days held out as unseen test data")
+    ap.add_argument("--min-trades", type=int, default=60, help="Sweep: ignore settings with fewer training trades")
+    ap.add_argument("--refresh", action="store_true", help="Re-download candles instead of using the cache")
+    ap.add_argument("--csv", help="Write every trade to this CSV")
+    args = ap.parse_args()
+
+    symbols = args.symbols or (MAJORS if args.majors else top_perpetuals(args.top))
+    print(f"Costs per side: taker+GST {TAKER_FEE_PCT*100:.4f}%, slippage {ENTRY_SLIPPAGE_PCT*100:.3f}% entry / {EXIT_SLIPPAGE_PCT*100:.3f}% exit")
+    print(f"Loading {len(symbols)} symbols ({args.days}d + 60d warm-up)...")
+    data = _prepare(symbols, args.days, args.refresh)
+    if not data:
+        print("No usable data.")
+        return
+
+    if args.sweep:
+        run_sweep(data, args.days, args.test_frac, args.min_trades)
+        return
+
+    params = Params(args.min_score, args.stop_atr, args.stop_max_pct, args.target_r,
+                    args.side, args.cooldown_h, not args.no_ratchet)
+    print("Rules:", params.label())
+    last = max(h1.index[-1] for h1, _ in data.values())
+    start = last - pd.Timedelta(days=args.days)
+    all_trades: list[Trade] = []
+    for sym, (h1, sig) in data.items():
+        t = simulate(sym, h1, sig, params, start, None)
         all_trades.extend(t)
         s = summarize(t)
         print(f"  {sym:12s} trades={s.get('trades', 0):4d}  win%={s.get('win_rate_pct', '-')}  expR={s.get('expectancy_R', '-')}  totalR={s.get('total_R', '-')}")

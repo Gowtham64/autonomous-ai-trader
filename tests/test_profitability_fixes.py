@@ -234,11 +234,11 @@ def test_backtest_signals_have_no_lookahead():
 
 
 def test_backtest_on_random_walk_shows_no_edge_after_costs():
-    from tools.backtest_delta import compute_signals, simulate, summarize
+    from tools.backtest_delta import Params, compute_signals, simulate, summarize
     trades = []
     for seed in range(6):
         h1 = _synthetic_hourly(seed=seed)
-        trades += simulate(f"S{seed}", h1, compute_signals(h1), min_score=80)
+        trades += simulate(f"S{seed}", h1, compute_signals(h1), Params(min_score=80))
     s = summarize(trades)
     assert s["trades"] > 50
     # No predictability in a random walk: costs must make the average trade lose.
@@ -247,3 +247,21 @@ def test_backtest_on_random_walk_shows_no_edge_after_costs():
     # Losses are bounded near -1R (plus costs / gaps), wins near the 2.2R target.
     r = np.array([t.r_multiple for t in trades])
     assert r.min() > -2.0 and r.max() < 2.6
+
+
+def test_backtest_params_side_cooldown_and_window():
+    from tools.backtest_delta import Params, compute_signals, simulate
+    h1 = _synthetic_hourly(seed=3)
+    sig = compute_signals(h1)
+    longs = simulate("S", h1, sig, Params(min_score=80, side="long"))
+    assert longs and all(t.direction == "LONG" for t in longs)
+    cooled = simulate("S", h1, sig, Params(min_score=80, cooldown_h=24))
+    for a, b in zip(cooled, cooled[1:]):
+        gap_h = (pd.Timestamp(b.entry_time) - pd.Timestamp(a.exit_time)).total_seconds() / 3600
+        assert gap_h >= 24
+    start = h1.index[24 * 100]
+    windowed = simulate("S", h1, sig, Params(min_score=80), start=start)
+    assert all(pd.Timestamp(t.entry_time) > start for t in windowed)
+    # Wider stop -> costs are a smaller share of risk
+    wide = simulate("S", h1, sig, Params(min_score=80, stop_atr=2.0, stop_max_pct=0.08))
+    assert np.mean([t.stop_dist / t.entry for t in wide]) > np.mean([t.stop_dist / t.entry for t in longs])

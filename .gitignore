@@ -70,3 +70,4 @@ htmlcov/
 
 # Persisted kill-switch halt (runtime state, never commit)
 data/kill_switch_state.json
+data/backtest_cache/
