@@ -337,3 +337,36 @@ def test_trend_simulator_is_unbiased_on_driftless_prices():
         trades += simulate_trend("x", d, TrendParams(funding_pct_per_day=0.0))
     lo, hi = summarize(trades)["expectancy_R_95ci"]
     assert lo < -0.02 and hi > -0.2 and hi < 0.1
+
+
+def test_binance_daily_parser_pages_and_drops_unfinished_day(monkeypatch):
+    import tools.backtest_trend_daily as t
+    assert t.binance_symbol("XRPUSD") == "XRPUSDT" and t.binance_symbol("BTCUSDT") == "BTCUSDT"
+    day = 86_400_000
+    today = int(pd.Timestamp.now(tz="UTC").normalize().timestamp() * 1000)
+    start = today - 1500 * day
+    calls = []
+
+    def fake_get(url, params=None, timeout=15.0):
+        calls.append(params["startTime"])
+        rows = [[start + i * day, "1", "2", "0.5", "1.5", "10"] for i in range(1501)]  # incl. today
+        return [r for r in rows if r[0] >= params["startTime"]][:1000]
+
+    monkeypatch.setattr(t, "_get_json", fake_get)
+    df = t.fetch_binance_daily("XRPUSD", 1500)
+    assert len(calls) >= 2                      # paged past the 1000-row limit
+    # Window starts 1500 days before *now* (mid-day), so day 0 is just outside it;
+    # today's unfinished candle is dropped -> 1499 completed days.
+    assert len(df) == 1499
+    assert df.index[-1] < pd.Timestamp.now(tz="UTC").normalize()
+    assert df.index.is_monotonic_increasing and df["close"].iloc[0] == 1.5
+
+
+def test_by_year_breakdown_splits_on_exit_year():
+    from tools.backtest_delta import Trade
+    from tools.backtest_trend_daily import by_year
+    t = lambda d0, d1, r: Trade("X", "LONG", d0, d1, 1, 1, 0.1, "T", 0.0, r)
+    rows = by_year([t("2021-12-20", "2022-01-03", 2.0), t("2022-03-01", "2022-03-09", -1.0),
+                    t("2023-02-01", "2023-02-10", 1.0)], None, 0.01)
+    assert [r["year"] for r in rows] == [2022, 2023]
+    assert rows[0]["trades"] == 2 and rows[0]["expectancy_R"] == pytest.approx(0.5)

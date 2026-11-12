@@ -86,14 +86,63 @@ def fetch_daily_candles(symbol: str, days: int) -> pd.DataFrame:
     return df.dropna(subset=["close"])
 
 
-def load_daily(symbol: str, days: int, refresh: bool = False) -> pd.DataFrame:
+BINANCE_HOSTS = ("https://data-api.binance.vision", "https://api.binance.com")
+
+
+def binance_symbol(delta_symbol: str) -> str:
+    """XRPUSD -> XRPUSDT. Binance spot moves almost identically to the Delta perpetual."""
+    s = delta_symbol.upper()
+    return s if s.endswith("USDT") else (s[:-3] + "USDT" if s.endswith("USD") else s)
+
+
+def fetch_binance_daily(symbol: str, days: int) -> pd.DataFrame:
+    """Daily candles from Binance's public market-data API (history back to 2017)."""
+    sym = binance_symbol(symbol)
+    end_ms = int(time.time() * 1000)
+    start_ms = end_ms - days * 86_400_000
+    last_err = None
+    for host in BINANCE_HOSTS:
+        rows, t0 = [], start_ms
+        try:
+            while t0 < end_ms:
+                batch = _get_json(f"{host}/api/v3/klines",
+                                  {"symbol": sym, "interval": "1d", "startTime": t0, "limit": 1000})
+                if not isinstance(batch, list) or not batch:
+                    break
+                rows.extend(batch)
+                nxt = int(batch[-1][0]) + 86_400_000
+                if nxt <= t0:
+                    break
+                t0 = nxt
+            break
+        except Exception as e:  # try the next host
+            last_err = e
+            rows = []
+    if not rows:
+        if last_err:
+            raise last_err
+        return pd.DataFrame()
+    df = pd.DataFrame(
+        {"open": [float(r[1]) for r in rows], "high": [float(r[2]) for r in rows],
+         "low": [float(r[3]) for r in rows], "close": [float(r[4]) for r in rows],
+         "volume": [float(r[5]) for r in rows]},
+        index=pd.to_datetime([int(r[0]) for r in rows], unit="ms", utc=True),
+    )
+    df = df[~df.index.duplicated(keep="last")].sort_index()
+    # Drop today's unfinished candle so every bar is a completed day.
+    if len(df) and df.index[-1] + pd.Timedelta(days=1) > pd.Timestamp.now(tz="UTC"):
+        df = df.iloc[:-1]
+    return df.dropna(subset=["close"])
+
+
+def load_daily(symbol: str, days: int, refresh: bool = False, source: str = "delta") -> pd.DataFrame:
     os.makedirs(CACHE_DIR, exist_ok=True)
-    path = os.path.join(CACHE_DIR, f"{symbol}_D_{days}d.csv")
+    path = os.path.join(CACHE_DIR, f"{symbol}_D_{days}d_{source}.csv")
     if not refresh and os.path.exists(path) and (time.time() - os.path.getmtime(path)) < 12 * 3600:
         df = pd.read_csv(path, index_col=0)
         df.index = pd.to_datetime(df.index, utc=True)
         return df
-    df = fetch_daily_candles(symbol, days)
+    df = fetch_binance_daily(symbol, days) if source == "binance" else fetch_daily_candles(symbol, days)
     if not df.empty:
         df.to_csv(path)
     return df
@@ -281,11 +330,37 @@ def run(data: dict[str, pd.DataFrame], p: TrendParams, start=None, end=None) -> 
     return out
 
 
-def _report(title: str, trades: list[Trade], risk_pct: float) -> dict:
+def by_year(trades: list[Trade], btc: pd.DataFrame | None, risk_pct: float) -> list[dict]:
+    """Per calendar year (by exit date): trades, expectancy, compounded return, BTC hold."""
+    rows = []
+    years = sorted({pd.Timestamp(t.exit_time).year for t in trades})
+    for y in years:
+        ty = [t for t in trades if pd.Timestamp(t.exit_time).year == y]
+        s = summarize(ty)
+        c = compound(ty, 10.0, risk_pct)
+        hold = float("nan")
+        if btc is not None:
+            hold = hold_return_pct(btc, pd.Timestamp(f"{y}-01-01", tz="UTC"), pd.Timestamp(f"{y + 1}-01-01", tz="UTC"))
+        rows.append({"year": y, "trades": s["trades"], "expectancy_R": s["expectancy_R"],
+                     "win_rate_pct": s["win_rate_pct"], "strategy_return_pct": c["return_pct"],
+                     "strategy_max_dd_pct": c["max_drawdown_pct"], "btc_hold_pct": hold})
+    return rows
+
+
+def print_years(rows: list[dict]) -> None:
+    print("\n  Year | trades | exp R  | win%  | strategy | worst drop | BTC hold")
+    for r in rows:
+        print(f"  {r['year']} | {r['trades']:6d} | {r['expectancy_R']:+.3f} | {r['win_rate_pct']:5.1f} | "
+              f"{r['strategy_return_pct']:+7.1f}% | {r['strategy_max_dd_pct']:9.1f}% | {r['btc_hold_pct']:+7.1f}%")
+
+
+def _report(title: str, trades: list[Trade], risk_pct: float, btc: pd.DataFrame | None = None, years: bool = False) -> dict:
     s = summarize(trades)
     s["compounded_1pct_risk_from_$10"] = compound(trades, 10.0, risk_pct)
     print(f"\n=== {title} ===")
     print(json.dumps(s, indent=2))
+    if years and trades:
+        print_years(by_year(trades, btc, risk_pct))
     print("VERDICT:", verdict(s))
     return s
 
@@ -295,7 +370,9 @@ def main() -> None:
     ap.add_argument("--symbols", nargs="*")
     ap.add_argument("--majors", action="store_true")
     ap.add_argument("--top", type=int, default=10)
-    ap.add_argument("--days", type=int, default=1095, help="History to test (default 3 years)")
+    ap.add_argument("--days", type=int, default=None, help="History to test (default: 3 years on Delta, 8 years on Binance)")
+    ap.add_argument("--source", choices=["delta", "binance"], default="delta",
+                    help="binance = Binance spot daily candles back to 2017 (incl. the 2018 and 2022 crashes)")
     ap.add_argument("--funding", type=float, default=DEFAULT_FUNDING_PCT_PER_DAY, help="Funding cost per day held, e.g. 0.0003")
     ap.add_argument("--risk-pct", type=float, default=0.01, help="Equity risked per trade in the compounding replay")
     ap.add_argument("--sweep", action="store_true")
@@ -305,12 +382,15 @@ def main() -> None:
     args = ap.parse_args()
 
     symbols = args.symbols or (MAJORS if args.majors else top_perpetuals(args.top))
+    if args.days is None:
+        args.days = 2920 if args.source == "binance" else 1095
     warmup = 260
+    print(f"Data source: {args.source} ({'spot, used as a proxy for Delta perpetuals; funding still charged' if args.source == 'binance' else 'Delta perpetuals'})")
     print(f"Costs per side: taker+GST {TAKER_FEE_PCT*100:.4f}%, slippage {ENTRY_SLIPPAGE_PCT*100:.3f}%/{EXIT_SLIPPAGE_PCT*100:.3f}%; funding {args.funding*100:.3f}%/day held")
     data: dict[str, pd.DataFrame] = {}
     for sym in symbols:
         try:
-            d = load_daily(sym, args.days + warmup, args.refresh)
+            d = load_daily(sym, args.days + warmup, args.refresh, args.source)
         except Exception as e:
             print(f"  {sym}: data error ({e})")
             continue
@@ -329,7 +409,8 @@ def main() -> None:
 
     base = PRE_REGISTERED if args.funding == DEFAULT_FUNDING_PCT_PER_DAY else TrendParams(**{**asdict(PRE_REGISTERED), "funding_pct_per_day": args.funding})
     trades = run(data, base, start)
-    _report(f"PRE-REGISTERED RULE (untuned): {base.label()}  {start.date()} -> {last.date()}", trades, args.risk_pct)
+    _report(f"PRE-REGISTERED RULE (untuned): {base.label()}  {start.date()} -> {last.date()}",
+            trades, args.risk_pct, btc, years=True)
     if btc is not None:
         print(f"For comparison, holding BTC over the same period: {hold_return_pct(btc, start)}%")
     if args.csv and trades:
@@ -353,7 +434,7 @@ def main() -> None:
             print(f"  expR={e:+.3f} trades={s['trades']:4d} win%={s['win_rate_pct']:5.1f} PF={s['profit_factor']} | {p.label()}")
         best = rows[0][1]
         _report(f"BEST TRAINING SETTING ON UNSEEN TEST DATA: {best.label()}", run(data, best, split), args.risk_pct)
-        _report(f"PRE-REGISTERED RULE ON THE SAME TEST DATA: {base.label()}", run(data, base, split), args.risk_pct)
+        _report(f"PRE-REGISTERED RULE ON THE SAME TEST DATA: {base.label()}", run(data, base, split), args.risk_pct, btc, years=True)
         if btc is not None:
             print(f"Holding BTC over the test period: {hold_return_pct(btc, split)}%")
         print("\nOnly results on unseen data (and the untuned pre-registered rule) count.")
