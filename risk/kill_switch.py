@@ -175,6 +175,15 @@ class EmergencyKillSwitch:
         data_feed_healthy: bool = True,
     ) -> tuple[bool, str | None]:
         """Runs periodic health and risk threshold verification to auto-trigger if limits are breached."""
+        self.clear_expired_halts()
+        if self._is_engaged:
+            return False, f"Kill switch already engaged: {self.reason}"
+
+        # Scale the limit to the ACTUAL account equity passed in.
+        return self._check_limits(daily_loss, current_drawdown_pct, max_capital, broker_connected, data_feed_healthy)
+
+    def clear_expired_halts(self) -> None:
+        """Clear halts whose time is up. Never rebases peak equity."""
         # A daily-loss halt clears at the next UTC day. Peak equity is NOT rebased, so the
         # drawdown limit keeps measuring from the true high-water mark.
         if (
@@ -200,10 +209,14 @@ class EmergencyKillSwitch:
                 self.reason = None
                 self._save_state()
 
-        if self._is_engaged:
-            return False, f"Kill switch already engaged: {self.reason}"
-
-        # Scale the limit to the ACTUAL account equity passed in.
+    def _check_limits(
+        self,
+        daily_loss: float,
+        current_drawdown_pct: float,
+        max_capital: float,
+        broker_connected: bool,
+        data_feed_healthy: bool,
+    ) -> tuple[bool, str | None]:
         base_capital = max_capital if max_capital > 0 else settings.MAX_CAPITAL
 
         # Detect currency and establish appropriate loss floor

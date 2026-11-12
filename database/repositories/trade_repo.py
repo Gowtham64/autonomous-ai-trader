@@ -96,13 +96,21 @@ class TradeRepository:
             return list(res.scalars())
 
     @staticmethod
-    async def get_journal_win_stats(hours: int = 48, limit: int = 20) -> dict:
-        """Aggregate recent performance across ALL symbols — the system's live report card."""
+    async def get_journal_win_stats(hours: int = 48, limit: int = 20, strategy_tag: str | None = None) -> dict:
+        """Aggregate recent performance across ALL symbols — the system's live report card.
+
+        strategy_tag filters on the journal's market_regime column, which the daily trend
+        engine sets to "DAILY_TREND" so its record is judged separately from the old
+        hourly strategy's trades.
+        """
         async with AsyncSessionLocal() as session:
             cutoff = datetime.now(UTC) - timedelta(hours=hours)
+            conds = [TradeJournalEntity.logged_at >= cutoff]
+            if strategy_tag:
+                conds.append(TradeJournalEntity.market_regime == strategy_tag)
             stmt = (
                 select(TradeJournalEntity)
-                .where(TradeJournalEntity.logged_at >= cutoff)
+                .where(*conds)
                 .order_by(TradeJournalEntity.logged_at.desc())
                 .limit(limit)
             )

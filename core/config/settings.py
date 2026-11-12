@@ -69,6 +69,25 @@ class Settings(BaseSettings):
     # Crypto exits: False = stop / target / rule-based trailing stop only (planned R:R is
     # what actually gets realized). True re-enables the old discretionary early exits.
     GUARDIAN_DISCRETIONARY_EXITS: bool = False
+
+    # ---- Daily trend engine (run_daily_trend.py) --------------------------------
+    # The only strategy in this repo with a backtested edge (see strategy/daily_trend.py).
+    DAILY_TREND_SYMBOLS: list[str] = [
+        "BTCUSD", "ETHUSD", "SOLUSD", "XRPUSD", "BNBUSD", "DOGEUSD", "ADAUSD", "LINKUSD",
+        "AVAXUSD", "LTCUSD", "BCHUSD", "DOTUSD", "SUIUSD", "NEARUSD", "TRXUSD",
+    ]
+    DAILY_TREND_RISK_PCT: float = 0.01            # equity lost if a stop is hit (as backtested)
+    DAILY_TREND_MAX_POSITIONS: int = 15
+    DAILY_TREND_MAX_POSITION_NOTIONAL_PCT: float = 0.5
+    # Halts (persisted kill switch, manual reset). Backtest worst drawdown was ~18%,
+    # so 25% means the strategy is behaving worse than anything seen in 8 years.
+    DAILY_TREND_MAX_DRAWDOWN_PCT: float = 0.25
+    DAILY_TREND_MAX_DAILY_LOSS_PCT: float = 0.06
+    # Paper first: real orders only when BOTH TRADING_MODE=live (+LIVE_TRADING_ENABLED)
+    # AND this flag are set. Otherwise it trades an isolated paper account of this size.
+    DAILY_TREND_ALLOW_LIVE: bool = False
+    DAILY_TREND_PAPER_CAPITAL: float = 500.0
+    DAILY_TREND_POLL_MINUTES: int = 15
     MAX_DAILY_LOSS_PCT: float = 0.01              # 1% max daily loss circuit breaker (₹20 on ₹2,000)
     MAX_PORTFOLIO_DRAWDOWN_PCT: float = 0.03      # 3% max drawdown circuit breaker (₹60 on ₹2,000)
     MAX_OPEN_POSITIONS: int = 3                   # Fallback only. Each cycle decides the live cap.

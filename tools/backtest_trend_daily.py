@@ -44,20 +44,25 @@ import pandas as pd
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from risk.profit_math import ENTRY_SLIPPAGE_PCT, EXIT_SLIPPAGE_PCT, TAKER_FEE_PCT  # noqa: E402
+# The rules themselves live in strategy/daily_trend.py and are shared with the live
+# engine, so what is backtested is exactly what trades.
+from strategy.daily_trend import (  # noqa: E402,F401
+    DEFAULT_FUNDING_PCT_PER_DAY,
+    PRE_REGISTERED,
+    TrendParams,
+    compute_trend_signals,
+)
 from tools.backtest_delta import (  # noqa: E402
     CACHE_DIR,
     DELTA_BASE_URL,
     MAJORS,
     Trade,
     _get_json,
-    atr,
-    ema,
     summarize,
     top_perpetuals,
     verdict,
 )
 
-DEFAULT_FUNDING_PCT_PER_DAY = 0.0003
 
 
 # --------------------------------------------------------------------------- data
@@ -146,55 +151,6 @@ def load_daily(symbol: str, days: int, refresh: bool = False, source: str = "del
     if not df.empty:
         df.to_csv(path)
     return df
-
-
-# ------------------------------------------------------------------------ rules
-
-@dataclass(frozen=True)
-class TrendParams:
-    family: str = "donchian"   # donchian | ema
-    entry_n: int = 55          # donchian entry lookback, or EMA fast
-    exit_n: int = 20           # donchian exit lookback, or EMA slow
-    atr_k: float = 3.0         # initial + trailing stop distance in ATR(20)
-    side: str = "long"         # long | both
-    funding_pct_per_day: float = DEFAULT_FUNDING_PCT_PER_DAY
-
-    def label(self) -> str:
-        if self.family == "donchian":
-            rule = f"Donchian {self.entry_n}/{self.exit_n}"
-        else:
-            rule = f"EMA {self.entry_n}/{self.exit_n}"
-        return f"{rule} stop={self.atr_k:g}xATR side={self.side}"
-
-
-PRE_REGISTERED = TrendParams("donchian", 55, 20, 3.0, "long")
-
-
-def compute_trend_signals(d: pd.DataFrame, p: TrendParams) -> pd.DataFrame:
-    """Signals at each daily close using only that close and earlier bars."""
-    out = pd.DataFrame(index=d.index)
-    c = d["close"]
-    out["atr"] = atr(d["high"], d["low"], c, 20)
-    if p.family == "donchian":
-        prev_hi = d["high"].rolling(p.entry_n).max().shift(1)
-        prev_lo = d["low"].rolling(p.entry_n).min().shift(1)
-        exit_lo = d["low"].rolling(p.exit_n).min().shift(1)
-        exit_hi = d["high"].rolling(p.exit_n).max().shift(1)
-        out["long_entry"] = c > prev_hi
-        out["short_entry"] = c < prev_lo
-        out["long_exit"] = c < exit_lo
-        out["short_exit"] = c > exit_hi
-        warm = max(p.entry_n, p.exit_n, 20) + 1
-    else:
-        fast, slow = ema(c, p.entry_n), ema(c, p.exit_n)
-        above = fast > slow
-        out["long_entry"] = above & ~above.shift(1, fill_value=False)
-        out["short_entry"] = ~above & above.shift(1, fill_value=False)
-        out["long_exit"] = ~above
-        out["short_exit"] = above
-        warm = p.exit_n * 2
-    out.iloc[:warm, out.columns.get_indexer(["long_entry", "short_entry"])] = False
-    return out
 
 
 def _net(entry: float, exit_px: float, is_short: bool, days_held: int, funding: float) -> float:
