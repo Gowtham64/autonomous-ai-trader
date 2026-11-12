@@ -70,6 +70,36 @@ class DeltaExchangeBroker(BaseBroker):
             "User-Agent": "Autonomous-AI-Trader/1.0",
         }
 
+    async def get_recent_fills(self, symbol: str, since: datetime | None = None, page_size: int = 50) -> list[dict]:
+        """Executed fills for one product (GET /v2/fills), newest first.
+
+        Used to record the TRUE exit price when an exchange-side stop closed a position,
+        instead of assuming it filled exactly at the stop. Returns [] if unavailable."""
+        products = await self.get_products()
+        pid = (products.get(symbol) or {}).get("id")
+        if not pid:
+            return []
+        params: dict = {"product_ids": str(pid), "page_size": str(page_size)}
+        if since is not None:
+            params["start_time"] = str(int(since.timestamp() * 1_000_000))  # microseconds
+        res = await self._request("GET", "/v2/fills", params=params)
+        if not (res.get("success") and isinstance(res.get("result"), list)):
+            return []
+        fills = []
+        for f in res["result"]:
+            try:
+                fills.append({
+                    "side": str(f.get("side", "")).upper(),
+                    "size": float(f.get("size") or 0),
+                    "price": float(f.get("price") or 0),
+                    "created_at": f.get("created_at"),
+                    "order_id": str(f.get("order_id") or ""),
+                    "commission": float(f.get("commission") or 0),
+                })
+            except (TypeError, ValueError):
+                continue
+        return [f for f in fills if f["size"] > 0 and f["price"] > 0]
+
     async def _request(self, method: str, path: str, params: dict | None = None, payload: dict | None = None) -> dict:
         """Executes an authenticated HTTP request to Delta Exchange API."""
         url = f"{self.base_url}{path}"

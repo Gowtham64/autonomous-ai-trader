@@ -42,16 +42,27 @@ python run_daily_trend.py          # loop (checks every 15 minutes)
 It acts once a day, shortly after the daily candle closes (00:00 UTC = 05:30 IST).
 Between closes it only watches stops. Logs go to `logs/daily_trend.log`.
 
-### Dashboard
+### Trading terminal
 
 ```bash
-.venv/bin/python run_trend_dashboard.py   # opens http://localhost:8787
+.venv/bin/python run_terminal.py   # opens http://localhost:8787 (run_trend_dashboard.py also works)
 ```
 
-Shows equity and its curve, drawdown, open positions with their stops, every closed
-trade (in $ and R), live results next to the backtest's, and what the last check did.
-It's read-only, refreshes every minute and only works on this computer. It warns you if
-the bot has stopped or the kill switch is engaged. Stopping the dashboard doesn't stop the bot.
+A full terminal for this strategy, with live data, run alongside the bot:
+- **Overview:** account, P&L, exposure, health.
+- **Markets:** 15 coins with live prices, spreads, trend, RSI, MACD, ATR, and distance to a breakout.
+- **Chart:** candles with indicators, trade markers, and entry/stop/take-profit lines.
+- **Positions:** live P&L, plus buttons to move the stop, set a take-profit, partially close or close.
+- **Orders:** every order with the broker's response.
+- **History:** analytics and equity/drawdown curves.
+- **Risk:** limits, pause entries, kill switch.
+- **Strategy:** the rule, coins on/off, signal checks.
+- **System:** component health and event log.
+- **Assistant:** Gemini answers from your records. Add `GEMINI_API_KEY=...` to `.env`.
+
+Buttons never trade directly: they queue a command that the **engine** executes within seconds, and the
+terminal shows the broker's answer. If the bot isn't running, buttons are disabled. Stopping the
+terminal doesn't stop the bot. See `TERMINAL_AND_BENCHMARK_REPORT.md` for details.
 
 ### Paper first (default)
 

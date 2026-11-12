@@ -75,3 +75,9 @@ data/daily_trend_state.json
 data/daily_trend_paper_broker.json
 data/daily_trend_status.json
 data/daily_trend_equity.csv
+data/daily_trend.db
+data/daily_trend.db-wal
+data/daily_trend.db-shm
+data/daily_trend_heartbeat.json
+data/daily_trend_risk.json
+data/*.tmp

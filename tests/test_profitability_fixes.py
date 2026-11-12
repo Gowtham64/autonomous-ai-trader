@@ -370,3 +370,14 @@ def test_by_year_breakdown_splits_on_exit_year():
                     t("2023-02-01", "2023-02-10", 1.0)], None, 0.01)
     assert [r["year"] for r in rows] == [2022, 2023]
     assert rows[0]["trades"] == 2 and rows[0]["expectancy_R"] == pytest.approx(0.5)
+
+
+def test_monte_carlo_drawdown_distribution():
+    from tools.backtest_delta import Trade
+    from tools.backtest_trend_daily import monte_carlo
+    mk = lambda r: Trade("X", "LONG", "2026-01-01", "2026-01-02", 1, 1, 0.1, "T", 0.0, r)
+    mc = monte_carlo([mk(2.0)] * 40 + [mk(-1.0)] * 60, risk_pct=0.01, runs=500)
+    d = mc["max_drawdown_pct"]
+    assert 0 < d["median"] <= d["p90"] <= d["p95"] <= d["p99"]
+    assert mc["equity_multiple"]["p5"] <= mc["equity_multiple"]["median"] <= mc["equity_multiple"]["p95"]
+    assert monte_carlo([mk(1.0)] * 5) == {}  # too few trades to say anything

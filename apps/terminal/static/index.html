@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="terminal-token" content="__TERMINAL_TOKEN__">
+<title>Trading Terminal</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="topbar">
+  <span class="brand">Daily Trend</span>
+  <span id="mode-badge" class="badge unknown">—</span>
+  <div class="stat"><span class="k">Equity</span><span class="v" id="tb-equity">—</span></div>
+  <div class="stat"><span class="k">Total P&amp;L</span><span class="v" id="tb-pnl">—</span></div>
+  <div class="stat"><span class="k">Today</span><span class="v" id="tb-today">—</span></div>
+  <div class="stat"><span class="k">Open</span><span class="v" id="tb-open">—</span></div>
+  <div class="stat"><span class="k">Drawdown</span><span class="v" id="tb-dd">—</span></div>
+  <span class="spacer"></span>
+  <span id="tb-engine"><span class="dot"></span>engine</span>
+  <span id="tb-feed"><span class="dot"></span>market data</span>
+  <span id="tb-stream"><span class="dot"></span>live link</span>
+  <span id="tb-clock" class="num muted"></span>
+</header>
+
+<div id="app">
+  <nav id="nav">
+    <button data-view="overview" class="active">Overview</button>
+    <button data-view="markets">Markets</button>
+    <button data-view="chart">Chart</button>
+    <button data-view="positions">Positions <span class="count" id="nav-pos">0</span></button>
+    <button data-view="orders">Orders</button>
+    <button data-view="history">History</button>
+    <button data-view="risk">Risk</button>
+    <button data-view="strategy">Strategy</button>
+    <button data-view="system">System</button>
+    <button data-view="assistant">Assistant</button>
+  </nav>
+  <main>
+    <div id="global-alerts"></div>
+
+    <!-- OVERVIEW -->
+    <section class="view active" id="view-overview">
+      <div class="kpis" id="ov-kpis"></div>
+      <div class="grid g2" style="margin-top:12px">
+        <div class="panel"><h3>Open positions</h3><div id="ov-positions"></div></div>
+        <div class="panel"><h3>Last engine check</h3><div id="ov-cycle"></div></div>
+      </div>
+      <div class="grid g2">
+        <div class="panel"><h3>Performance (closed trades)</h3><div class="kpis" id="ov-perf"></div></div>
+        <div class="panel"><h3>Recent terminal actions</h3><div id="ov-commands"></div></div>
+      </div>
+    </section>
+
+    <!-- MARKETS -->
+    <section class="view" id="view-markets">
+      <div class="toolbar">
+        <input type="search" id="mk-search" placeholder="Filter coins">
+        <select id="mk-trend"><option value="">All trends</option><option>UP</option><option>DOWN</option><option>SIDEWAYS</option></select>
+        <label class="chk"><input type="checkbox" id="mk-signals"> Signals / positions only</label>
+        <span class="muted" id="mk-age"></span>
+      </div>
+      <div class="panel"><div class="tbl-wrap"><table id="mk-table"></table></div>
+        <p class="faint" style="margin:8px 0 0">Live Delta tickers (5s). Trend, RSI, MACD, ATR and VWAP are on completed daily candles.
+        "To breakout" is how far the price must rise for a daily close above the 55-day high (the entry rule).</p></div>
+    </section>
+
+    <!-- CHART -->
+    <section class="view" id="view-chart">
+      <div class="toolbar">
+        <select id="ch-symbol"></select>
+        <div class="seg" id="ch-tf">
+          <button data-tf="1d" class="on">1D</button><button data-tf="4h">4H</button><button data-tf="1h">1H</button>
+          <button data-tf="15m">15m</button><button data-tf="5m">5m</button><button data-tf="1m">1m</button>
+        </div>
+        <label class="chk"><input type="checkbox" data-ov="ema20" checked> EMA20</label>
+        <label class="chk"><input type="checkbox" data-ov="ema50" checked> EMA50</label>
+        <label class="chk"><input type="checkbox" data-ov="sma20"> SMA20</label>
+        <label class="chk"><input type="checkbox" data-ov="bb"> Bollinger</label>
+        <label class="chk"><input type="checkbox" data-ov="vwap"> VWAP</label>
+        <label class="chk"><input type="checkbox" data-ov="levels" checked> Strategy levels</label>
+        <span class="muted" id="ch-status"></span>
+      </div>
+      <div class="panel">
+        <div class="chart-legend" id="ch-legend"></div>
+        <div id="chart-main"></div>
+        <h3 style="margin-top:8px">RSI 14</h3><div id="chart-rsi"></div>
+        <h3 style="margin-top:8px">MACD 12/26/9</h3><div id="chart-macd"></div>
+      </div>
+    </section>
+
+    <!-- POSITIONS -->
+    <section class="view" id="view-positions">
+      <div class="panel"><div class="tbl-wrap"><table id="pos-table"></table></div>
+        <p class="faint" style="margin:8px 0 0">Prices and P&amp;L update from live exchange marks. Actions are executed by the engine;
+        a position disappears only after the broker confirms the fill.</p></div>
+    </section>
+
+    <!-- ORDERS -->
+    <section class="view" id="view-orders">
+      <div class="toolbar">
+        <select id="or-status"><option value="">All statuses</option><option>FILLED</option><option>SUBMITTED</option>
+          <option>PARTIALLY_FILLED</option><option>REJECTED</option><option>CANCELLED</option></select>
+        <select id="or-symbol"><option value="">All coins</option></select>
+        <select id="or-purpose"><option value="">Entries &amp; exits</option><option>ENTRY</option><option>EXIT</option><option>PARTIAL_EXIT</option></select>
+      </div>
+      <div class="panel"><div class="tbl-wrap"><table id="or-table"></table></div></div>
+      <div class="panel"><h3>Terminal commands</h3><div class="tbl-wrap"><table id="cmd-table"></table></div></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="view" id="view-history">
+      <div class="kpis" id="hi-kpis"></div>
+      <div class="grid g2" style="margin-top:12px">
+        <div class="panel"><h3>Equity</h3><div id="eq-chart"></div></div>
+        <div class="panel"><h3>Drawdown from peak (%)</h3><div id="dd-chart"></div></div>
+      </div>
+      <div class="panel"><h3>Live vs 8-year backtest</h3><div id="hi-bt"></div></div>
+      <div class="panel">
+        <div class="toolbar"><h3 style="margin:0">Closed trades</h3><span class="spacer"></span>
+          <input type="search" id="hi-search" placeholder="Filter coin / reason">
+          <select id="hi-result"><option value="">All</option><option value="win">Winners</option><option value="loss">Losers</option></select></div>
+        <div class="tbl-wrap"><table id="hi-trades"></table></div>
+      </div>
+      <div class="panel">
+        <div class="toolbar"><h3 style="margin:0">Breakdown</h3>
+          <div class="seg" id="hi-group">
+            <button data-g="daily">Daily</button><button data-g="weekly">Weekly</button><button data-g="monthly" class="on">Monthly</button>
+            <button data-g="by_symbol">Coin</button><button data-g="by_side">Long/Short</button><button data-g="by_exit_reason">Exit reason</button>
+          </div></div>
+        <div class="tbl-wrap"><table id="hi-groups"></table></div>
+      </div>
+    </section>
+
+    <!-- RISK -->
+    <section class="view" id="view-risk">
+      <div class="kpis" id="rk-kpis"></div>
+      <div class="grid g2" style="margin-top:12px">
+        <div class="panel"><h3>Controls</h3><div id="rk-controls"></div></div>
+        <div class="panel"><h3>Risk settings (validated on the server and by the engine)</h3><form id="rk-form"></form></div>
+      </div>
+      <div class="grid g2">
+        <div class="panel"><h3>Position concentration</h3><div class="tbl-wrap"><table id="rk-pos"></table></div></div>
+        <div class="panel"><h3>Risk events &amp; violations</h3><div class="tbl-wrap"><table id="rk-viol"></table></div></div>
+      </div>
+    </section>
+
+    <!-- STRATEGY -->
+    <section class="view" id="view-strategy">
+      <div class="grid g2">
+        <div class="panel" id="st-rule"></div>
+        <div class="panel"><h3>Performance vs backtest</h3><div id="st-perf"></div></div>
+      </div>
+      <div class="panel"><h3>Coins traded by this strategy</h3><div id="st-symbols"></div></div>
+      <div class="panel"><h3>Latest daily signal check</h3><div class="tbl-wrap"><table id="st-signals"></table></div></div>
+    </section>
+
+    <!-- SYSTEM -->
+    <section class="view" id="view-system">
+      <div class="panel"><h3>Components</h3><div id="sy-comps"></div><p class="faint" id="sy-note" style="margin:8px 0 0"></p></div>
+      <div class="panel">
+        <div class="toolbar"><h3 style="margin:0">Event log</h3><span class="spacer"></span>
+          <select id="sy-kind"><option value="">All events</option></select></div>
+        <div class="tbl-wrap"><table id="sy-events"></table></div>
+      </div>
+    </section>
+
+    <!-- ASSISTANT -->
+    <section class="view" id="view-assistant">
+      <div class="panel">
+        <h3>Trading assistant (Gemini) — answers only from this bot's records; cannot place or change orders</h3>
+        <div class="suggest" id="chat-suggest"></div>
+        <div id="chat-log"></div>
+        <form id="chat-form"><input type="text" id="chat-input" placeholder="Ask about positions, trades, risk, signals…" autocomplete="off">
+          <button class="btn primary" type="submit" id="chat-send">Ask</button></form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal-bg"><div id="modal"></div></div>
+<div id="toasts"></div>
+<script src="/static/lightweight-charts.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

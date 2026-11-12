@@ -31,6 +31,8 @@ from core.logging import logger  # noqa: E402
 from portfolio.position_sizer import get_delta_contract_multiplier  # noqa: E402
 from risk.kill_switch import kill_switch  # noqa: E402
 
+COMMAND_POLL_SECONDS = 2
+
 
 def live_allowed() -> bool:
     return (
@@ -99,23 +101,39 @@ async def main(once: bool) -> None:
         logger.critical(f"🛑 Kill switch ENGAGED: {kill_switch.reason}. Exits are still managed; no new entries until reset.")
 
     engine = build_engine()
+    stuck = engine.store.requeue_stuck_commands()
+    if stuck:
+        logger.warning(f"[Daily Trend] {stuck} terminal command(s) were mid-execution at the last shutdown; "
+                       f"marked FAILED (check positions before retrying).")
+    cycle_every = settings.DAILY_TREND_POLL_MINUTES * 60
+    next_cycle = 0.0
+    loop = asyncio.get_running_loop()
     while True:
-        try:
-            summary = await engine.run_cycle()
-            if once or summary["entries"] or summary["exits"] or summary["stops_moved"]:
-                print(json.dumps(summary, indent=2, default=str))
-            else:
-                logger.info(
-                    f"[Daily Trend] {summary['mode']} equity ${summary['equity']:.2f} | "
-                    f"open: {list(summary['open_positions'])} | next check in {settings.DAILY_TREND_POLL_MINUTES}m"
-                )
-        except Exception as e:
-            logger.error(f"[Daily Trend] Cycle error: {e}")
+        if loop.time() >= next_cycle:
+            try:
+                summary = await engine.run_cycle()
+                if once or summary["entries"] or summary["exits"] or summary["stops_moved"]:
+                    print(json.dumps(summary, indent=2, default=str))
+                else:
+                    logger.info(
+                        f"[Daily Trend] {summary['mode']} equity ${summary['equity']:.2f} | "
+                        f"open: {list(summary['open_positions'])} | next check in {settings.DAILY_TREND_POLL_MINUTES}m"
+                    )
+            except Exception as e:
+                logger.error(f"[Daily Trend] Cycle error: {e}")
+                if once:
+                    raise
+            next_cycle = loop.time() + cycle_every
             if once:
-                raise
-        if once:
-            return
-        await asyncio.sleep(settings.DAILY_TREND_POLL_MINUTES * 60)
+                return
+        # Terminal commands (close, move stop, ...) are handled within seconds, between cycles.
+        try:
+            for r in await engine.process_commands():
+                logger.info(f"[Daily Trend] Terminal command {r['id'][:8]}: {r.get('message') or r.get('error')}")
+            engine.write_heartbeat()
+        except Exception as e:
+            logger.error(f"[Daily Trend] Command processing error: {e}")
+        await asyncio.sleep(COMMAND_POLL_SECONDS)
 
 
 if __name__ == "__main__":

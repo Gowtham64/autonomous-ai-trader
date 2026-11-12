@@ -259,6 +259,28 @@ def compound(trades: list[Trade], start_equity: float = 10.0, risk_pct: float = 
     }
 
 
+def monte_carlo(trades: list[Trade], risk_pct: float = 0.01, runs: int = 3000, seed: int = 7) -> dict:
+    """Resample the trade sequence (with replacement) to see the RANGE of outcomes the same
+    edge could produce in a different order (pattern adopted from Jesse's Monte Carlo mode).
+    The one historical path is just one draw; the worst plausible drawdown matters more."""
+    if len(trades) < 20:
+        return {}
+    rng = np.random.default_rng(seed)
+    r = np.array([t.r_multiple for t in trades])
+    dds, finals = [], []
+    for _ in range(runs):
+        path = rng.choice(r, size=len(r), replace=True)
+        eq = np.cumprod(1 + risk_pct * path)
+        peak = np.maximum.accumulate(np.concatenate([[1.0], eq]))
+        dds.append(float(np.max((peak[1:] - eq) / peak[1:])) * 100)
+        finals.append(float(eq[-1]))
+    pct = lambda a, q: round(float(np.percentile(a, q)), 2)  # noqa: E731
+    return {"runs": runs, "trades_per_run": len(r),
+            "max_drawdown_pct": {"median": pct(dds, 50), "p90": pct(dds, 90), "p95": pct(dds, 95), "p99": pct(dds, 99)},
+            "equity_multiple": {"p5": pct(finals, 5), "median": pct(finals, 50), "p95": pct(finals, 95)},
+            "chance_of_loss_pct": round(float(np.mean(np.array(finals) < 1.0)) * 100, 1)}
+
+
 def hold_return_pct(d: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp | None = None) -> float:
     w = d[(d.index >= start) & ((d.index < end) if end is not None else True)]
     if len(w) < 2:
@@ -367,6 +389,13 @@ def main() -> None:
     trades = run(data, base, start)
     _report(f"PRE-REGISTERED RULE (untuned): {base.label()}  {start.date()} -> {last.date()}",
             trades, args.risk_pct, btc, years=True)
+    mc = monte_carlo(trades, args.risk_pct)
+    if mc:
+        print(f"\nMonte Carlo ({mc['runs']} reshuffled trade sequences at {args.risk_pct * 100:g}% risk):")
+        print(f"  worst drawdown: median {mc['max_drawdown_pct']['median']}%, 1-in-10 {mc['max_drawdown_pct']['p90']}%, "
+              f"1-in-20 {mc['max_drawdown_pct']['p95']}%, 1-in-100 {mc['max_drawdown_pct']['p99']}%")
+        print(f"  ending equity multiple: 5th pct {mc['equity_multiple']['p5']}x, median {mc['equity_multiple']['median']}x, "
+              f"95th pct {mc['equity_multiple']['p95']}x; chance of ending below start: {mc['chance_of_loss_pct']}%")
     if btc is not None:
         print(f"For comparison, holding BTC over the same period: {hold_return_pct(btc, start)}%")
     if args.csv and trades:

@@ -213,35 +213,3 @@ def test_completed_bars_never_includes_a_forming_candle():
     assert completed_bars(df, pd.Timestamp("2026-01-05 12:00", tz="UTC")).index[-1] == idx[3]
     # One minute before Jan 4's candle closes, the newest complete one is Jan 3.
     assert completed_bars(df, pd.Timestamp("2026-01-05 05:29", tz="UTC")).index[-1] == idx[2]
-
-
-def test_status_file_and_dashboard_render(tmp_path, monkeypatch):
-    import json
-    import run_trend_dashboard as dash
-    df = _trending_market()
-    clock = Clock(df.index[0])
-    eng = _make_engine(tmp_path, df, clock, [], capital=500.0)
-    _drive(eng, df, clock, df.index[60:200])
-    st = json.loads((tmp_path / "daily_trend_status.json").read_text())
-    assert st["mode"] == "PAPER" and st["starting_capital"] == 500.0
-    assert (tmp_path / "daily_trend_equity.csv").read_text().startswith("time,equity")
-    for p in st["positions"]:
-        assert p["mark"] > 0 and p["qty"] > 0
-        # "If stopped out" is what the current stop locks in, relative to entry
-        assert p["locked_in_usd"] == pytest.approx((p["stop"] - p["entry"]) * p["qty"] * 0.01, abs=1e-3)
-
-    monkeypatch.setattr(dash, "DATA", tmp_path)
-    monkeypatch.setattr(dash, "ROOT", tmp_path)
-    html = dash.render()
-    assert "Daily Trend Bot" in html and "PAPER" in html
-    assert "may be stopped" in html  # replay clock is in 2025, so the status looks stale
-    st["kill_switch"] = "test halt"
-    (tmp_path / "daily_trend_status.json").write_text(json.dumps(st))
-    assert "Kill switch engaged" in dash.render()
-
-
-def test_dashboard_without_any_data(tmp_path, monkeypatch):
-    import run_trend_dashboard as dash
-    monkeypatch.setattr(dash, "DATA", tmp_path)
-    monkeypatch.setattr(dash, "ROOT", tmp_path)
-    assert "No status yet" in dash.render()

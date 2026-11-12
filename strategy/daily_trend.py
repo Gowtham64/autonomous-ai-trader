@@ -67,6 +67,9 @@ def compute_trend_signals(d: pd.DataFrame, p: TrendParams) -> pd.DataFrame:
         out["short_entry"] = c < prev_lo
         out["long_exit"] = c < exit_lo
         out["short_exit"] = c > exit_hi
+        # Levels the next close is compared against (for display; decisions use the booleans).
+        out["entry_level"] = d["high"].rolling(p.entry_n).max()
+        out["exit_level"] = d["low"].rolling(p.exit_n).min()
         warm = max(p.entry_n, p.exit_n, 20) + 1
     else:
         fast, slow = ema(c, p.entry_n), ema(c, p.exit_n)
@@ -75,6 +78,8 @@ def compute_trend_signals(d: pd.DataFrame, p: TrendParams) -> pd.DataFrame:
         out["short_entry"] = ~above & above.shift(1, fill_value=False)
         out["long_exit"] = ~above
         out["short_exit"] = above
+        out["entry_level"] = slow
+        out["exit_level"] = slow
         warm = p.exit_n * 2
     out.iloc[:warm, out.columns.get_indexer(["long_entry", "short_entry"])] = False
     return out
@@ -104,6 +109,9 @@ class DailyView:
     short_entry: bool
     long_exit: bool
     short_exit: bool
+    # Levels for the NEXT close: breaks above entry_level -> entry, below exit_level -> exit
+    entry_level: float = float("nan")
+    exit_level: float = float("nan")
 
 
 def latest_view(d: pd.DataFrame, p: TrendParams) -> DailyView | None:
@@ -122,6 +130,8 @@ def latest_view(d: pd.DataFrame, p: TrendParams) -> DailyView | None:
         short_entry=bool(sig["short_entry"]) and p.side == "both",
         long_exit=bool(sig["long_exit"]),
         short_exit=bool(sig["short_exit"]),
+        entry_level=float(sig["entry_level"]),
+        exit_level=float(sig["exit_level"]),
     )
 
 
