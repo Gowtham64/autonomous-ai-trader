@@ -28,6 +28,7 @@ class ExpectancyGate:
     # A trade must show REAL confluence, not just a favorable R:R ratio: without this,
     # any 2:1 setup is "positive EV" even at a 43% estimated win rate.
     REQUIRED_WIN_PROBABILITY = 0.55
+    PRIOR_WEIGHT_TRADES = 20
 
     @staticmethod
     def evaluate(
@@ -38,6 +39,8 @@ class ExpectancyGate:
         is_crypto: bool,
         history_adjustment: float = 0.0,
         required_p_override: float | None = None,
+        realized_win_rate: float = 0.0,
+        realized_trades: int = 0,
     ) -> tuple[bool, str, dict]:
         entry = decision.entry_price or signal.ltp
         sl = decision.stop_loss or 0.0
@@ -110,10 +113,22 @@ class ExpectancyGate:
 
         p = max(ExpectancyGate.MIN_WIN_PROBABILITY, min(ExpectancyGate.MAX_WIN_PROBABILITY, p))
 
+        # The score above is a hand-assigned prior, never checked against outcomes.
+        # Blend it with the system's REAL win rate as closed trades accumulate: with
+        # PRIOR_WEIGHT trades on record the two count equally; with many more, the
+        # evidence dominates. This is what makes the gate learn instead of just agree.
+        if realized_trades > 0:
+            prior_p = p
+            p = (realized_trades * realized_win_rate + ExpectancyGate.PRIOR_WEIGHT_TRADES * prior_p) / (
+                realized_trades + ExpectancyGate.PRIOR_WEIGHT_TRADES
+            )
+            factors.append(f"realized win rate {realized_win_rate:.2f} over {realized_trades} trades -> p {prior_p:.2f}->{p:.2f}")
+
         # --- Round-trip friction per unit of the asset ---
         if is_crypto:
-            # Delta taker fee 0.05% each side + slippage allowance
-            fee_per_unit = (entry + tgt) * 0.0005 + entry * 0.0003
+            # Delta taker fee 0.05% + 18% GST each side, plus entry and exit slippage.
+            from risk.profit_math import EXIT_SLIPPAGE_PCT, ENTRY_SLIPPAGE_PCT, TAKER_FEE_PCT
+            fee_per_unit = (entry + tgt) * TAKER_FEE_PCT + entry * (ENTRY_SLIPPAGE_PCT + EXIT_SLIPPAGE_PCT)
         else:
             # Indian equity intraday: brokerage + STT + exchange + GST + stamp (approx)
             fee_per_unit = entry * 0.0015
@@ -132,7 +147,11 @@ class ExpectancyGate:
         else:
             required_p = base_required
 
-        has_confluence = p >= required_p
+        # The fixed confluence floor only guards the prior-only phase. Once the win rate
+        # comes from real trades, positive EV after fees is the correct test: a 2.2:1
+        # system winning 40% of the time is profitable but would fail a 0.52 floor.
+        evidence_based = realized_trades >= ExpectancyGate.PRIOR_WEIGHT_TRADES
+        has_confluence = evidence_based or p >= required_p
         approved = (ev_per_unit > required_edge) and has_confluence
 
         metrics = {

@@ -1,3 +1,5 @@
+> **⚠️ SYNTHETIC — NOT REAL PERFORMANCE.** Every trade below comes from `tests/run_7day_paper_soak_test.py`, where each scenario hardcodes its own exit price. These numbers say nothing about whether the strategy makes money. Use `tools/backtest_delta.py` (historical Delta candles, fees included) and the live/paper trade journal instead.
+
 # Historical Trading Performance Baseline
 **Recorded At**: 2026-11-06 11:15:00 UTC  
 **Purpose**: Official historical benchmark ledger used to evaluate the 7-Day Live Trading Qualification Test ($6.00 capital).

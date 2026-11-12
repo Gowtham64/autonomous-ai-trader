@@ -59,6 +59,16 @@ class Settings(BaseSettings):
 
     # Risk Engine Constraints (Strict Deterministic Capital Preservation Limits)
     MAX_RISK_PER_TRADE_PCT: float = 0.005         # 0.5% per trade risk (₹10 on ₹2,000)
+    # Accounts under $25 can't size 1 contract at 0.5%, so they get a modest 1% budget.
+    # Trades whose 1-contract stop risk exceeds this are skipped, never forced.
+    MICRO_ACCOUNT_RISK_PER_TRADE_PCT: float = 0.01
+    # Realized-edge gate: once this many closed trades exist in the lookback window,
+    # new entries are blocked while realized net expectancy per trade is <= 0.
+    EDGE_GATE_MIN_TRADES: int = 20
+    EDGE_GATE_LOOKBACK_TRADES: int = 40
+    # Crypto exits: False = stop / target / rule-based trailing stop only (planned R:R is
+    # what actually gets realized). True re-enables the old discretionary early exits.
+    GUARDIAN_DISCRETIONARY_EXITS: bool = False
     MAX_DAILY_LOSS_PCT: float = 0.01              # 1% max daily loss circuit breaker (₹20 on ₹2,000)
     MAX_PORTFOLIO_DRAWDOWN_PCT: float = 0.03      # 3% max drawdown circuit breaker (₹60 on ₹2,000)
     MAX_OPEN_POSITIONS: int = 3                   # Fallback only. Each cycle decides the live cap.

@@ -84,7 +84,10 @@ def test_small_winner_is_not_booked_against_a_larger_stop():
     assert worker.state.stop_loss == 98.0
 
 
-def test_pullback_books_only_after_the_win_covers_the_stop():
+def test_pullback_books_only_after_the_win_covers_the_stop(monkeypatch):
+    # Discretionary "performance harvest" is opt-in now (GUARDIAN_DISCRETIONARY_EXITS).
+    from core.config.settings import settings
+    monkeypatch.setattr(settings, "GUARDIAN_DISCRETIONARY_EXITS", True)
     pos = PositionSnapshot(
         position_id="POS-SOLUSD",
         symbol="SOLUSD",
@@ -107,6 +110,34 @@ def test_pullback_books_only_after_the_win_covers_the_stop():
     assert action.value == "TARGET_EXIT"
     assert "Performance Exit" in reason
     assert "$102.5000" in reason
+
+
+def test_default_pullback_keeps_winner_and_locks_stop_instead(monkeypatch):
+    # Default: no early harvest. Peak netted >= 1.8R, so the stop locks +1R and the
+    # position stays open toward its target.
+    from core.config.settings import settings
+    monkeypatch.setattr(settings, "GUARDIAN_DISCRETIONARY_EXITS", False)
+    pos = PositionSnapshot(
+        position_id="POS-SOLUSD",
+        symbol="SOLUSD",
+        exchange="DELTA",
+        side="BUY",
+        quantity=1,
+        entry_price=100.0,
+        current_price=101.2,
+        stop_loss=99.0,
+        target_1=110.0,
+        highest_price_seen=102.5,
+        lowest_price_seen=100.0,
+        unrealized_pnl=0.0,
+        opened_at=datetime.now(UTC),
+        is_active=True,
+    )
+    worker = PositionGuardianWorker(pos=pos, atr_14=3.0)
+    worker.state.highest_price_seen = 102.5
+    action, _reason = asyncio.run(worker.evaluate_tick(current_ltp=101.2))
+    assert action.value == "ADJUST_TRAILING_STOP"
+    assert 101.0 < worker.state.stop_loss < 101.2
 
 
 def test_winning_close_compounds_cash_and_keeps_the_original_stake():

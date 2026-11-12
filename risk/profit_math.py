@@ -4,8 +4,19 @@ A higher exit price is not a win until both taker fees and the adverse
 exit fill are covered. The leftover is what compounds into the next size.
 """
 
-TAKER_FEE_PCT = 0.0005
+import os
+
+# Delta Exchange India taker fee is 0.05% of notional, and 18% GST is charged on
+# top of the fee, so the real cost per side is 0.059%. Using 0.05% understated
+# every round trip by ~0.02% of notional.
+DELTA_TAKER_FEE_PCT = float(os.getenv("DELTA_TAKER_FEE_PCT", "0.0005"))
+GST_ON_FEES_PCT = float(os.getenv("GST_ON_FEES_PCT", "0.18"))
+TAKER_FEE_PCT = DELTA_TAKER_FEE_PCT * (1.0 + GST_ON_FEES_PCT)
 EXIT_SLIPPAGE_PCT = 0.0005
+ENTRY_SLIPPAGE_PCT = 0.0005
+
+# Full round-trip friction as a fraction of entry price (fee both sides + slippage both sides).
+ROUND_TRIP_COST_PCT = 2 * TAKER_FEE_PCT + ENTRY_SLIPPAGE_PCT + EXIT_SLIPPAGE_PCT
 
 
 def expected_net_pnl(

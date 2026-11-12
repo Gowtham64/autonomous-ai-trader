@@ -139,7 +139,12 @@ async def run_unified_trading_office(duration_hours: float | None = None, focus_
     else:
         console.print("[bold yellow]⚡ [Delta Exclusive Mode Active] 100% compute & velocity focused solely on Delta Exchange ($25 USD target).[/bold yellow]")
 
-    kill_switch.reset("Unified Live Launcher")
+    # A halt persisted by the kill switch must survive restarts (start_auto.sh restarts
+    # the engine forever). Only an explicit operator flag clears it at startup.
+    if os.getenv("KILL_SWITCH_RESET_ON_START", "").lower() in ("1", "true", "yes"):
+        kill_switch.reset("Unified Live Launcher (KILL_SWITCH_RESET_ON_START)")
+    elif kill_switch.is_engaged:
+        console.print(f"[bold red]🛑 Kill switch is ENGAGED from a previous session: {kill_switch.reason}. New entries stay halted until an operator resets it (set KILL_SWITCH_RESET_ON_START=1 or use the CLI/API).[/bold red]")
     console.print(f"\n[bold green]🚀 AI Trading Engine ({'Delta 24/7 Exclusive' if focus_broker == 'delta' else 'Unified'}) is fully ARMED and ACTIVE![/bold green]\n")
 
     cycle_count = 0

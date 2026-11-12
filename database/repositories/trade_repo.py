@@ -119,6 +119,11 @@ class TradeRepository:
             "win_rate": (wins / total) if total else 0.0,
             "profit_factor": (gross_win / gross_loss) if gross_loss > 0 else (999.0 if gross_win > 0 else 0.0),
             "net_pnl": round(sum(r.pnl for r in rows), 4),
+            # Net (after-fee) average P&L per closed trade: the number that decides
+            # whether this system makes money. Win rate alone does not.
+            "expectancy": round(sum(r.pnl for r in rows) / total, 6) if total else 0.0,
+            "avg_win": round(gross_win / wins, 6) if wins else 0.0,
+            "avg_loss": round(-gross_loss / (total - wins), 6) if (total - wins) else 0.0,
         }
 
     @staticmethod

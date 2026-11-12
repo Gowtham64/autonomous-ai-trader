@@ -72,6 +72,24 @@ def get_delta_contract_multiplier(symbol: str) -> float | None:
     return None
 
 
+def require_delta_contract_multiplier(symbol: str) -> float:
+    """Multiplier for P&L/valuation code paths that cannot simply refuse.
+
+    Falling back to 1.0 silently is how a 0.01-multiplier contract (XMR, BCH, ETH...)
+    gets its P&L reported 100x too large. Keep 1.0 only as a last resort and make the
+    problem impossible to miss in the logs.
+    """
+    mult = get_delta_contract_multiplier(symbol)
+    if mult is None or mult <= 0:
+        logger.error(
+            f"🚨 [Contract Multiplier] {symbol} has NO verified Delta contract multiplier; "
+            f"assuming 1.0. P&L and risk for this symbol may be wrong by orders of magnitude. "
+            f"Refresh data/delta_contract_multipliers.json from /v2/products."
+        )
+        return 1.0
+    return float(mult)
+
+
 class PositionSizer:
     """Calculates deterministic order quantities based on ATR volatility, stop loss distance, and capital caps."""
 
@@ -110,9 +128,10 @@ class PositionSizer:
         # Micro accounts get a modest bump over the configured risk, not a 4x-8x one:
         # 4% risk with a 45% exposure cap at 5x leverage was compounding losses fast.
         is_micro_crypto = is_crypto and self.total_equity < 25.0
-        # Calibrate risk to 3.5% per trade on micro accounts (giving $0.21 risk on $6.00, strictly within 6.00% gate)
-        # to ensure winning trades yield meaningful profit ($0.35 - $0.55) rather than fractions of a cent
-        risk_pct = max(settings.MAX_RISK_PER_TRADE_PCT, 0.035) if is_micro_crypto else settings.MAX_RISK_PER_TRADE_PCT
+        # Risk per trade is exactly what settings allow. It used to be forced up to 3.5%
+        # (and up to 6% via the "acceptable" cap below) on micro accounts — 7-12x the
+        # configured 0.5% — so a few stop-outs erased many small wins.
+        risk_pct = settings.MICRO_ACCOUNT_RISK_PER_TRADE_PCT if is_micro_crypto else settings.MAX_RISK_PER_TRADE_PCT
         risk_amount = self.total_equity * risk_pct
         stop_distance = abs(decision.entry_price - decision.stop_loss) * contract_mult
 
@@ -139,7 +158,9 @@ class PositionSizer:
             return 0
 
         # Safety Check: Prevent taking a trade if the risk on 1 unit exceeds maximum acceptable account risk
-        max_acceptable_trade_risk = max(risk_amount, self.total_equity * (0.06 if is_micro_crypto else 0.035))
+        # The smallest possible position (1 contract) must itself fit the risk budget.
+        # If it doesn't, skip the trade instead of quietly taking an oversized one.
+        max_acceptable_trade_risk = risk_amount
         if stop_distance > max_acceptable_trade_risk:
             logger.warning(
                 f"Trade risk for 1 unit ({curr_sym}{stop_distance:.2f}) exceeds maximum acceptable account risk "

@@ -365,10 +365,11 @@ class AngelOneBroker(BaseBroker):
                     "symboltoken": str(symbol_token),
                     "transactiontype": transaction_type,
                     "exchange": "NSE",
-                    "ordertype": "MARKET" if not order.price else "LIMIT",
+                    # Exit (reduce_only) orders always go as MARKET so a stop can't rest unfilled.
+                    "ordertype": "MARKET" if (not order.price or getattr(order, "reduce_only", False)) else "LIMIT",
                     "producttype": getattr(order, "product_type", "INTRADAY") or "INTRADAY",  # DELIVERY or INTRADAY
                     "duration": "DAY",
-                    "price": str(round(order.price, 2)) if order.price else "0",
+                    "price": str(round(order.price, 2)) if (order.price and not getattr(order, "reduce_only", False)) else "0",
                     "squareoff": str(round(order.target, 2)) if order.target else "0",
                     "stoploss": str(round(order.stop_loss, 2)) if order.stop_loss else "0",
                     "quantity": str(order.quantity),

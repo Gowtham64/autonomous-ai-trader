@@ -282,7 +282,10 @@ class MasterTradeGuardian:
                         GuardianAction.MIDDAY_PEAK_HARVEST,
                         GuardianAction.CHART_PROFIT_TAKE,
                     ]:
+                        exit_fill_price = ltp
                         if target_broker:
+                            from core.domain.models import OrderStatus
+                            from core.schemas.trade import OrderType
                             from execution.router import OrderRouter
                             router = OrderRouter(target_broker)
                             is_short = getattr(worker.state, "side", "BUY").upper() == "SELL"
@@ -293,7 +296,11 @@ class MasterTradeGuardian:
                                 exchange=worker.state.exchange,
                                 action=exit_action,
                                 quantity=worker.state.quantity,
-                                price=ltp if (ltp and ltp > 0) else None,  # market exit executes at evaluated tick
+                                # Exits are MARKET orders. `price` is only a reference for paper
+                                # brokers' simulated fill; live adapters must not rest it as a limit
+                                # (a resting limit stop never fills in a falling market).
+                                order_type=OrderType.MARKET,
+                                price=ltp if (ltp and ltp > 0) else None,
                                 stop_loss=0.0,
                                 target=0.0,
                                 decision_id=f"GRD-{action.value}",
@@ -306,11 +313,22 @@ class MasterTradeGuardian:
                             except Exception as db_err:
                                 logger.debug(f"[Trade Guardian] Exit order DB persistence notice: {db_err}")
 
+                            # The position is still open if the exit didn't go through. Keep the
+                            # guardian active so it retries next cycle, instead of marking the trade
+                            # closed and leaving a live position with no one watching it.
+                            if exec_report.status == OrderStatus.REJECTED and (exec_report.filled_quantity or 0) <= 0:
+                                logger.error(
+                                    f"🚨 [Trade Guardian] Exit {action.value} for {symbol} was REJECTED "
+                                    f"({exec_report.order_id}). Position remains open; guardian stays active and retries next cycle."
+                                )
+                                continue
+                            if exec_report.average_price and exec_report.average_price > 0:
+                                exit_fill_price = float(exec_report.average_price)
 
                         # Generate Post-Trade Quality Report and deactivate worker
                         post_report = PostTradeAnalyticsEngine.analyze_completed_guardian_position(
                             state=worker.state,
-                            exit_price=ltp,
+                            exit_price=exit_fill_price,
                             exit_reason=action.value,
                             brokerage_fee=None,
                             interventions_count=worker.interventions_count,
@@ -334,7 +352,7 @@ class MasterTradeGuardian:
                             await TradeRepository.save_journal(
                                 symbol=symbol,
                                 entry_price=worker.state.entry_price,
-                                exit_price=ltp,
+                                exit_price=exit_fill_price,
                                 pnl=post_report.realized_pnl,
                                 exit_reason=action.value,
                                 holding_period_seconds=holding_secs,

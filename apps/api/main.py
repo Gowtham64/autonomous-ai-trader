@@ -960,7 +960,14 @@ async def get_performance():
     if benchmark_file.exists():
         try:
             with open(benchmark_file, "r", encoding="utf-8") as f:
-                historical_baseline = json.load(f).get("metrics", {})
+                _bench = json.load(f)
+                historical_baseline = dict(_bench.get("metrics", {}))
+                # This file comes from a scripted soak test with hardcoded exits. Never
+                # let a dashboard present it as real performance.
+                historical_baseline["synthetic"] = True
+                historical_baseline["warning"] = _bench.get(
+                    "WARNING", "Synthetic scripted benchmark — not real trading performance."
+                )
         except Exception:
             pass
 
@@ -1222,6 +1229,7 @@ async def get_evaluation_status():
         "acceptance_criteria": [
             {"criterion": "Completed round trips", "target": "20 closed paper trades in this window", "status": trade_status},
             {"criterion": "Profit Factor", "target": "Profit factor ≥ 1.60", "status": pf_status},
+            {"criterion": "Net Expectancy", "target": "Average net P&L per trade > 0 after fees", "status": "PENDING" if gate["closed_trades"] < 20 else ("PASS" if gate["checks"]["expectancy"] else "FAIL")},
             {"criterion": "Maximum Drawdown", "target": "Max drawdown < 4.5%", "status": "PASS" if gate["checks"]["drawdown"] else "FAIL"},
             {"criterion": "Daily Loss Breaches", "target": f"Daily loss ≤ {daily_limit:.2f}%", "status": "PASS" if daily_loss_pct <= daily_limit else "FAIL"},
             {"criterion": "System Stability", "target": "72 hours without a gap over 15 minutes", "status": "PENDING"},

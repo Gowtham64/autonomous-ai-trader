@@ -104,12 +104,18 @@ class PositionGuardianWorker:
         curr_sym = "$" if is_crypto else "₹"
 
         if is_crypto:
-            from portfolio.position_sizer import get_delta_contract_multiplier
-            mult = get_delta_contract_multiplier(self.state.symbol) or 1.0
+            from portfolio.position_sizer import require_delta_contract_multiplier
+            mult = require_delta_contract_multiplier(self.state.symbol)
         else:
             mult = 1.0
 
         val_px = mark_price if (mark_price is not None and mark_price > 0) else current_ltp
+        # Discretionary exits (chart profit-take, MTF "thesis" audit, peak harvest, crypto
+        # stagnation scratch) closed winners at ~+0.9% while losers ran to the -1.5% stop,
+        # turning a planned 1:2.2 into a realized ~1:1.3. Default: OFF for crypto, so a
+        # trade ends only at its stop, its target, or the rule-based trailing stop below.
+        from core.config.settings import settings as _settings
+        discretionary = bool(getattr(_settings, "GUARDIAN_DISCRETIONARY_EXITS", False)) or not is_crypto
 
         if is_short:
             pnl = (self.state.entry_price - val_px) * self.state.quantity * mult
@@ -179,7 +185,7 @@ class PositionGuardianWorker:
         # Instead of waiting for arbitrary clock times or static targets, continuously monitor
         # the 5-minute chart: shooting stars, upper wick rejection, 9-EMA / VWAP breaks, previous candle low breaks.
         # ChartProfitTaker logic is long-only (upper-wick/EMA-break analysis); never apply it to shorts.
-        if not is_short and ohlcv_5m is not None and hasattr(ohlcv_5m, "empty") and not ohlcv_5m.empty and (pnl > 0 or self.state.highest_price_seen > self.state.entry_price):
+        if discretionary and not is_short and ohlcv_5m is not None and hasattr(ohlcv_5m, "empty") and not ohlcv_5m.empty and (pnl > 0 or self.state.highest_price_seen > self.state.entry_price):
             from guardian.chart_monitor import ChartProfitTaker
             should_exit, chart_reason = ChartProfitTaker.evaluate_chart_profit_exit(
                 df_5m=ohlcv_5m,
@@ -200,7 +206,7 @@ class PositionGuardianWorker:
         # Instead of waiting for arbitrary clock time or fixed stop losses, continuously evaluate
         # multi-timeframe price action and AI foundation model intelligence. If market structure
         # has broken down or momentum is exhausted, scratch early to preserve capital!
-        if provider is not None and (pnl < 0 or abs(pnl_pct) < 0.30):
+        if discretionary and provider is not None and (pnl < 0 or abs(pnl_pct) < 0.30):
             try:
                 from guardian.multitimeframe_auditor import multi_timeframe_auditor
                 should_ai_exit, audit_reason = await multi_timeframe_auditor.audit_position(
@@ -261,7 +267,7 @@ class PositionGuardianWorker:
 
             # Rule 3C: All-Day Dynamic Performance Harvest (Active 24/7 across all market sessions and crypto)
             # If position made a substantial peak gain (>= +0.60%) and has pulled back by >= 0.25%, lock gains!
-            if peak_gain_pct >= 0.60 and pullback_from_peak_pct >= 0.25 and self._exit_compounds(current_ltp, is_short, mult):
+            if discretionary and peak_gain_pct >= 0.60 and pullback_from_peak_pct >= 0.25 and self._exit_compounds(current_ltp, is_short, mult):
                 self.interventions_count += 1
                 peak_px = self.state.lowest_price_seen if is_short else self.state.highest_price_seen
                 peak_txt = f"{peak_px:.4f}" if is_crypto else f"{peak_px:.2f}"
@@ -332,7 +338,7 @@ class PositionGuardianWorker:
         # A small red mark is normal. Closing it after 90 minutes books the fee and
         # stops the winner from ever paying the account. Scratch only a real loser
         # that has sat for 6 hours without hitting its stop.
-        if is_crypto:
+        if is_crypto and discretionary:
             duration_minutes = (datetime.now(UTC) - self.state.opened_at).total_seconds() / 60.0
             if duration_minutes >= 360.0 and pnl_pct <= -1.0:
                 self.interventions_count += 1
@@ -362,11 +368,23 @@ class PositionGuardianWorker:
             self.state.entry_price, peak_px, self.state.quantity, mult, is_short,
         )
 
+        # Ratchet schedule (R = planned stop risk in $):
+        #   peak net >= 1.0R -> stop to breakeven after fees (a winner can't become a loser)
+        #   peak net >= 1.8R -> stop to +1.0R
+        # Previously the stop jumped to +1R the moment the peak touched +1R, so almost any
+        # tick back closed the trade at 1R and the 2.2R target was rarely reachable.
+        lock_net = None
+        if risk_usd > 0:
+            if peak_net >= 1.8 * risk_usd:
+                lock_net = risk_usd
+            elif peak_net >= risk_usd:
+                lock_net = max(0.01 * risk_usd, 1e-9)  # breakeven + fees (+ a hair)
+
         if is_short:
             profit_points = self.state.entry_price - current_ltp
-            if risk_usd > 0 and peak_net >= risk_usd:
+            if lock_net is not None:
                 pay_px = round(price_that_pays(
-                    self.state.entry_price, self.state.quantity, mult, True, risk_usd,
+                    self.state.entry_price, self.state.quantity, mult, True, lock_net,
                 ), px_decimals)
                 target_sl = min(target_sl, pay_px)
             if profit_points >= (effective_atr * 0.8):
@@ -379,9 +397,9 @@ class PositionGuardianWorker:
             sl_improved = target_sl < self.state.stop_loss and target_sl > current_ltp
         else:
             profit_points = current_ltp - self.state.entry_price
-            if risk_usd > 0 and peak_net >= risk_usd:
+            if lock_net is not None:
                 pay_px = round(price_that_pays(
-                    self.state.entry_price, self.state.quantity, mult, False, risk_usd,
+                    self.state.entry_price, self.state.quantity, mult, False, lock_net,
                 ), px_decimals)
                 target_sl = max(target_sl, pay_px)
             if profit_points >= (effective_atr * 0.8):

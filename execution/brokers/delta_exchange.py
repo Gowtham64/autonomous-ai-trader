@@ -296,24 +296,38 @@ class DeltaExchangeBroker(BaseBroker):
             if order.target and order.target > 0 and product_id and not getattr(order, "reduce_only", False):
                 try:
                     pos_confirmed = False
-                    for _ in range(4):
+                    fill_entry = 0.0
+                    for _ in range(10):
                         await asyncio.sleep(0.5)
-                        curr_positions = await self.get_positions()
-                        if any(p.symbol == order.symbol and p.quantity > 0 for p in curr_positions):
+                        curr_positions = await self.get_positions(force=True)
+                        match = next((p for p in curr_positions if p.symbol == order.symbol and p.quantity > 0), None)
+                        if match is not None:
                             pos_confirmed = True
+                            fill_entry = float(getattr(match, "entry_price", 0.0) or 0.0)
                             break
 
                     if pos_confirmed:
+                        # Anchor the exchange-side bracket to the real fill, not the
+                        # pre-trade reference price, so the stop risks what was planned.
+                        from strategy.entry_anchor import shift_levels_to_fill
+                        ref_entry = float(order.price or 0.0)
+                        br_stop, br_target = shift_levels_to_fill(ref_entry, order.stop_loss, order.target, fill_entry)
+                        if fill_entry > 0 and ref_entry > 0 and abs(fill_entry - ref_entry) > 0:
+                            logger.info(
+                                f"🛡️ [Delta Exchange] {order.symbol} filled at {fill_entry} vs reference {ref_entry}; "
+                                f"bracket re-anchored SL {order.stop_loss}->{br_stop}, TP {order.target}->{br_target}"
+                            )
                         bracket_res = await self.place_bracket_order(
                             product_id=product_id,
                             product_symbol=order.symbol,
-                            stop_loss=order.stop_loss,
-                            take_profit=order.target,
+                            stop_loss=br_stop,
+                            take_profit=br_target,
                         )
                         if not bracket_res.get("success", False):
                             logger.error(f"❌ [Delta Exchange] Bracket order rejected for {order.symbol}: {bracket_res.get('error')}")
                     else:
                         logger.warning(f"⚠️ [Delta Exchange] Position for {order.symbol} not confirmed open after 2.0s; bracket deferred to guardian.")
+                        logger.error(f"🚨 [Delta Exchange] {order.symbol} has NO exchange-side stop yet — protection depends on the guardian polling loop until reconciliation.")
                 except Exception as b_err:
                     logger.warning(f"[Delta Exchange] Bracket order notice: {b_err}")
 

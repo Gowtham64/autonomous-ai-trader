@@ -30,8 +30,8 @@ class PositionMonitor:
             return round(val, prec)
 
         if is_crypto:
-            from portfolio.position_sizer import get_delta_contract_multiplier
-            mult = get_delta_contract_multiplier(pos.symbol) or 1.0
+            from portfolio.position_sizer import require_delta_contract_multiplier
+            mult = require_delta_contract_multiplier(pos.symbol)
         else:
             mult = 1.0
 

@@ -93,8 +93,8 @@ class AutonomousTradingDaemon:
                     today_utc = datetime.now(UTC).date()
                     risk_state_file = Path("data/daily_risk_state.json")
 
-                    # Autonomous kill-switch recovery: accept the realized loss and restart
-                    # risk baselines from current equity so trading can resume unattended.
+                    # Set only when an operator deliberately resets a halted kill switch.
+                    # Automatic recovery never rebases, so the drawdown limit stays real.
                     if kill_switch.rebase_required:
                         kill_switch.rebase_required = False
                         self.risk_engine.peak_equity = real_cap
@@ -245,6 +245,34 @@ class AutonomousTradingDaemon:
         cycle_summary["open_trade_reasons"] = slot_decision.reasons
         logger.info("[Open Trade Cap] " + " ".join(slot_decision.reasons))
 
+        # 0.9 REALIZED-EDGE GATE — evidence beats opinion. If the closed-trade record shows
+        # negative net expectancy after fees, stop opening LIVE positions (open positions
+        # keep being managed by the guardian below).
+        edge_stats: dict = {}
+        try:
+            from risk.edge_gate import evaluate_realized_edge
+            edge_stats = await TradeRepository.get_journal_win_stats(
+                hours=24 * 60, limit=settings.EDGE_GATE_LOOKBACK_TRADES,
+            )
+            verdict = evaluate_realized_edge(
+                edge_stats,
+                min_trades=settings.EDGE_GATE_MIN_TRADES,
+                is_live=(settings.TRADING_MODE == TradingMode.LIVE),
+            )
+            cycle_summary["realized_edge"] = verdict.reason
+            if not verdict.allow_live_entries:
+                logger.critical(f"⛔ [Realized Edge Gate] {verdict.reason}")
+                try:
+                    await trade_guardian.evaluate_all_guardians(provider=self.scanner.provider, broker=self.broker)
+                except Exception as grd_err:
+                    logger.error(f"[Realized Edge Gate] Guardian evaluation error: {grd_err}")
+                cycle_summary["status"] = "edge_gate_blocked"
+                return cycle_summary
+            if verdict.evaluated:
+                logger.info(f"[Realized Edge Gate] {verdict.reason}")
+        except Exception as edge_err:
+            logger.debug(f"[Realized Edge Gate] Stats lookup note: {edge_err}")
+
         # 1. State: SCANNING Complete Universe of Stocks/Cryptos
         self.current_state = TradingSessionState.SCANNING
         candidates = await self.scanner.get_top_candidates(
@@ -367,6 +395,8 @@ class AutonomousTradingDaemon:
                     is_crypto=is_crypto,
                     history_adjustment=history_adj,
                     required_p_override=required_p_override,
+                    realized_win_rate=float(edge_stats.get("win_rate") or 0.0),
+                    realized_trades=int(edge_stats.get("total") or 0),
                 )
                 if not exp_ok:
                     logger.info(f"Expectancy Gate skipped {candidate.symbol}: {exp_reason}")
@@ -458,6 +488,28 @@ class AutonomousTradingDaemon:
                         except Exception:
                             fresh_ltp = candidate.ltp
                             fresh_timestamp = datetime.now(UTC)
+
+                        # Re-anchor to the price we will actually trade at. Stop/target were
+                        # computed from the scan-time price; the debate can take minutes, so
+                        # keep the planned distances but move them to the fresh price — and if
+                        # price already ran more than half a stop-distance either way, the
+                        # setup is gone (chasing / already failing), so skip it.
+                        if fresh_ltp and fresh_ltp > 0 and order.price and order.stop_loss and order.target:
+                            from strategy.entry_anchor import reanchor_levels
+                            anchored = reanchor_levels(
+                                planned_entry=order.price,
+                                stop_loss=order.stop_loss,
+                                target=order.target,
+                                fresh_price=fresh_ltp,
+                                is_short=(decision.decision == TradeAction.SELL),
+                            )
+                            if anchored is None:
+                                logger.info(
+                                    f"⏭️ [Entry Drift] {candidate.symbol}: price moved from {order.price} to {fresh_ltp} "
+                                    f"(> 0.5 stop-distance) since the decision. Skipping stale setup."
+                                )
+                                continue
+                            order.price, order.stop_loss, order.target = anchored
 
                         bid = getattr(candidate, "bid", None) or (fresh_ltp * 0.999)
                         ask = getattr(candidate, "ask", None) or (fresh_ltp * 1.001)

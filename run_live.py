@@ -129,7 +129,12 @@ async def launch_live_system():
     console.print(f"[dim]Continuously scanning {scanner_universe.upper()} candidates, running AI specialist analysis, Bull vs Bear debates, and 15-point pre-trade audits...[/dim]")
     console.print("[bold yellow]Press Ctrl+C to gracefully stop the daemon.[/bold yellow]\n")
 
-    kill_switch.reset("Live Engine Launcher")
+    # A halt persisted by the kill switch must survive restarts (start_auto.sh restarts
+    # the engine forever). Only an explicit operator flag clears it at startup.
+    if os.getenv("KILL_SWITCH_RESET_ON_START", "").lower() in ("1", "true", "yes"):
+        kill_switch.reset("Live Engine Launcher (KILL_SWITCH_RESET_ON_START)")
+    elif kill_switch.is_engaged:
+        console.print(f"[bold red]🛑 Kill switch is ENGAGED from a previous session: {kill_switch.reason}. New entries stay halted until an operator resets it (set KILL_SWITCH_RESET_ON_START=1 or use the CLI/API).[/bold red]")
 
     # Run Autonomous Trading Cycles
     cycle_count = 0

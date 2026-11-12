@@ -33,8 +33,8 @@ class PostTradeAnalyticsEngine:
         )
         if is_crypto:
             # Delta exchange taker fee is 0.05% of notional turnover
-            from portfolio.position_sizer import get_delta_contract_multiplier
-            mult = get_delta_contract_multiplier(symbol) or 1.0
+            from portfolio.position_sizer import require_delta_contract_multiplier
+            mult = require_delta_contract_multiplier(symbol)
             turnover = ((entry * qty) + (exit_price * qty)) * mult
             return round(turnover * 0.0005, 4)
         else:
@@ -63,8 +63,8 @@ class PostTradeAnalyticsEngine:
             or state.symbol.endswith("ETH")
         )
         if is_crypto:
-            from portfolio.position_sizer import get_delta_contract_multiplier
-            mult = get_delta_contract_multiplier(state.symbol) or 1.0
+            from portfolio.position_sizer import require_delta_contract_multiplier
+            mult = require_delta_contract_multiplier(state.symbol)
         else:
             mult = 1.0
 

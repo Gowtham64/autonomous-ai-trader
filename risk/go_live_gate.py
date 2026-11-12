@@ -4,7 +4,9 @@ from datetime import UTC, datetime
 
 WINDOW_HOURS = 72.0
 MIN_CLOSED_TRADES = 20
-MIN_WIN_RATE = 55.0
+# Win rate is reported but only lightly gated: a system built for 2:1 payoffs is
+# healthy at ~40% wins. What must hold is positive average net P&L per trade.
+MIN_WIN_RATE = 35.0
 MIN_PROFIT_FACTOR = 1.6
 MAX_DRAWDOWN_PCT = 4.5
 
@@ -54,6 +56,8 @@ def score_go_live(
     gross_win = sum(float(trade.get("net_pnl") or 0.0) for trade in in_window if float(trade.get("net_pnl") or 0.0) > 0)
     gross_loss = abs(sum(float(trade.get("net_pnl") or 0.0) for trade in in_window if float(trade.get("net_pnl") or 0.0) < 0))
     win_rate = (wins / closed * 100.0) if closed else 0.0
+    net_total = sum(float(trade.get("net_pnl") or 0.0) for trade in in_window)
+    expectancy = (net_total / closed) if closed else 0.0
     if gross_loss > 0:
         profit_factor = gross_win / gross_loss
     elif gross_win > 0:
@@ -65,6 +69,7 @@ def score_go_live(
         "hours": window_done,
         "trades": closed >= MIN_CLOSED_TRADES,
         "win_rate": win_rate >= MIN_WIN_RATE,
+        "expectancy": expectancy > 0.0,
         "profit_factor": profit_factor >= MIN_PROFIT_FACTOR,
         "drawdown": drawdown_pct < MAX_DRAWDOWN_PCT,
         "continuity": interruptions == 0,
@@ -88,6 +93,7 @@ def score_go_live(
         "closed_trades": closed,
         "win_rate": round(win_rate, 1),
         "profit_factor": round(profit_factor, 2),
+        "expectancy": round(expectancy, 6),
         "checks": checks,
         "live_trading_enabled": False,
     }
