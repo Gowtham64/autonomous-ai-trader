@@ -265,3 +265,75 @@ def test_backtest_params_side_cooldown_and_window():
     # Wider stop -> costs are a smaller share of risk
     wide = simulate("S", h1, sig, Params(min_score=80, stop_atr=2.0, stop_max_pct=0.08))
     assert np.mean([t.stop_dist / t.entry for t in wide]) > np.mean([t.stop_dist / t.entry for t in longs])
+
+
+# ------------------------------------------------------- daily trend backtest
+
+def _synthetic_daily(n=900, drift=0.0, vol=0.03, seed=7):
+    rng = np.random.default_rng(seed)
+    rets = rng.normal(drift, vol, n)
+    close = 100 * np.exp(np.cumsum(rets))
+    open_ = np.concatenate([[100.0], close[:-1]])
+    wick = np.abs(rng.normal(0, vol / 2, n)) * close
+    idx = pd.date_range("2023-01-01", periods=n, freq="1D", tz="UTC")
+    return pd.DataFrame({"open": open_, "high": np.maximum(open_, close) + wick,
+                         "low": np.minimum(open_, close) - wick, "close": close,
+                         "volume": 1.0}, index=idx)
+
+
+@pytest.mark.parametrize("family,a,b", [("donchian", 55, 20), ("ema", 20, 100)])
+def test_trend_signals_have_no_lookahead(family, a, b):
+    from tools.backtest_trend_daily import TrendParams, compute_trend_signals
+    d = _synthetic_daily()
+    p = TrendParams(family, a, b, 3.0, "both")
+    full = compute_trend_signals(d, p)
+    part = compute_trend_signals(d.iloc[:500], p)
+    pd.testing.assert_frame_equal(full.iloc[:500], part)
+
+
+def test_trend_rule_captures_a_real_trend_and_not_noise():
+    from tools.backtest_trend_daily import PRE_REGISTERED, simulate_trend
+    from tools.backtest_delta import summarize
+    trending = simulate_trend("T", _synthetic_daily(drift=0.004, vol=0.025), PRE_REGISTERED)
+    assert summarize(trending)["expectancy_R"] > 0.5
+    noise = []
+    for seed in range(8):
+        noise += simulate_trend(f"N{seed}", _synthetic_daily(seed=seed), PRE_REGISTERED)
+    s = summarize(noise)
+    assert s["trades"] > 40
+    lo, hi = s["expectancy_R_95ci"]
+    assert lo < 0.15  # no reliable edge can be found in pure noise
+
+
+def test_trend_costs_include_daily_funding():
+    from tools.backtest_trend_daily import _net
+    no_funding = _net(100.0, 110.0, False, 10, 0.0)
+    with_funding = _net(100.0, 110.0, False, 10, 0.0003)
+    assert no_funding - with_funding == pytest.approx(0.003)
+
+
+def test_compounding_risks_one_percent_of_current_equity():
+    from tools.backtest_delta import Trade
+    from tools.backtest_trend_daily import compound
+    t = lambda d0, d1, r: Trade("X", "LONG", d0, d1, 1, 1, 0.1, "T", 0.0, r)
+    res = compound([t("2026-01-01", "2026-01-05", 2.0), t("2026-01-06", "2026-01-09", -1.0)], 10.0, 0.01)
+    # +2% of 10 -> 10.2, then -1% of 10.2 -> 10.098
+    assert res["end_equity"] == pytest.approx(10.10, abs=0.01)
+    assert res["max_drawdown_pct"] == pytest.approx(1.0, abs=0.05)
+
+
+def test_trend_simulator_is_unbiased_on_driftless_prices():
+    # Additive random walk: no drift, no edge. Without funding, the average trade must
+    # lose roughly the trading costs — not more (a bug against us) and not less (look-ahead).
+    from tools.backtest_delta import summarize
+    from tools.backtest_trend_daily import TrendParams, simulate_trend
+    trades = []
+    for seed in range(40):
+        rng = np.random.default_rng(seed)
+        c = np.maximum(1000 + np.cumsum(rng.normal(0, 3, 3000)), 50)
+        o = np.r_[1000, c[:-1]]
+        idx = pd.date_range("2015-01-01", periods=3000, freq="1D", tz="UTC")
+        d = pd.DataFrame(dict(open=o, high=np.maximum(o, c), low=np.minimum(o, c), close=c, volume=1.0), index=idx)
+        trades += simulate_trend("x", d, TrendParams(funding_pct_per_day=0.0))
+    lo, hi = summarize(trades)["expectancy_R_95ci"]
+    assert lo < -0.02 and hi > -0.2 and hi < 0.1

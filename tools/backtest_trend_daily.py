@@ -1,0 +1,363 @@
+"""Daily trend-following backtest for Delta Exchange perpetuals.
+
+The hourly scanner strategy showed no edge after costs. This tests a different and
+better-documented idea: ride multi-week trends on daily candles. Trades are rare
+(days to weeks each), so fees are a small fraction of each trade.
+
+Rules (all decisions at a daily close, using only data up to that close):
+  Donchian breakout : enter when close breaks the highest high of the previous N days;
+                      exit when close breaks the lowest low of the previous M days.
+  EMA trend         : enter when EMA(fast) crosses above EMA(slow); exit on cross back.
+  Both              : initial stop k x ATR(20) from entry, trailing at
+                      (highest close since entry - k x ATR). Shorts mirror everything.
+  Fills             : next day's open + slippage. A day that touches the stop exits at
+                      the stop (or at the open if it gapped through).
+  Costs             : taker fee + 18% GST each side, slippage each side, and perpetual
+                      FUNDING charged every day held (default 0.03%/day — about 0.01%
+                      per 8h, a typical bull-market rate; charged to longs AND shorts
+                      to stay conservative).
+
+How it judges itself:
+  1. PRE-REGISTERED RULE: the classic Donchian 55/20, 3xATR, long-only, chosen
+     before seeing any data. Because nothing was tuned, its full-period result is
+     honest evidence.
+  2. SWEEP: 24 settings chosen on the first 2/3 of history, judged on the last 1/3.
+  3. COMPOUNDING: trades replayed in time order risking 1% of current equity each,
+     across all symbols at once, compared with simply holding BTC.
+
+Usage:
+    python tools/backtest_trend_daily.py --majors --days 1095
+    python tools/backtest_trend_daily.py --majors --days 1095 --sweep
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from dataclasses import asdict, dataclass
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from risk.profit_math import ENTRY_SLIPPAGE_PCT, EXIT_SLIPPAGE_PCT, TAKER_FEE_PCT  # noqa: E402
+from tools.backtest_delta import (  # noqa: E402
+    CACHE_DIR,
+    DELTA_BASE_URL,
+    MAJORS,
+    Trade,
+    _get_json,
+    atr,
+    ema,
+    summarize,
+    top_perpetuals,
+    verdict,
+)
+
+DEFAULT_FUNDING_PCT_PER_DAY = 0.0003
+
+
+# --------------------------------------------------------------------------- data
+
+def fetch_daily_candles(symbol: str, days: int) -> pd.DataFrame:
+    end = int(time.time())
+    start = end - days * 86400
+    frames, t0, chunk = [], start, 400 * 86400
+    while t0 < end:
+        t1 = min(end, t0 + chunk)
+        data = _get_json(
+            f"{DELTA_BASE_URL}/v2/chart/history",
+            {"symbol": symbol, "resolution": "D", "from": t0, "to": t1},
+        ).get("result", {})
+        if isinstance(data, dict) and data.get("t"):
+            frames.append(pd.DataFrame(
+                {k: [float(x) for x in data[s]] for k, s in
+                 [("open", "o"), ("high", "h"), ("low", "l"), ("close", "c"), ("volume", "v")]},
+                index=pd.to_datetime(data["t"], unit="s", utc=True),
+            ))
+        t0 = t1
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames)
+    df = df[~df.index.duplicated(keep="last")].sort_index()
+    return df.dropna(subset=["close"])
+
+
+def load_daily(symbol: str, days: int, refresh: bool = False) -> pd.DataFrame:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    path = os.path.join(CACHE_DIR, f"{symbol}_D_{days}d.csv")
+    if not refresh and os.path.exists(path) and (time.time() - os.path.getmtime(path)) < 12 * 3600:
+        df = pd.read_csv(path, index_col=0)
+        df.index = pd.to_datetime(df.index, utc=True)
+        return df
+    df = fetch_daily_candles(symbol, days)
+    if not df.empty:
+        df.to_csv(path)
+    return df
+
+
+# ------------------------------------------------------------------------ rules
+
+@dataclass(frozen=True)
+class TrendParams:
+    family: str = "donchian"   # donchian | ema
+    entry_n: int = 55          # donchian entry lookback, or EMA fast
+    exit_n: int = 20           # donchian exit lookback, or EMA slow
+    atr_k: float = 3.0         # initial + trailing stop distance in ATR(20)
+    side: str = "long"         # long | both
+    funding_pct_per_day: float = DEFAULT_FUNDING_PCT_PER_DAY
+
+    def label(self) -> str:
+        if self.family == "donchian":
+            rule = f"Donchian {self.entry_n}/{self.exit_n}"
+        else:
+            rule = f"EMA {self.entry_n}/{self.exit_n}"
+        return f"{rule} stop={self.atr_k:g}xATR side={self.side}"
+
+
+PRE_REGISTERED = TrendParams("donchian", 55, 20, 3.0, "long")
+
+
+def compute_trend_signals(d: pd.DataFrame, p: TrendParams) -> pd.DataFrame:
+    """Signals at each daily close using only that close and earlier bars."""
+    out = pd.DataFrame(index=d.index)
+    c = d["close"]
+    out["atr"] = atr(d["high"], d["low"], c, 20)
+    if p.family == "donchian":
+        prev_hi = d["high"].rolling(p.entry_n).max().shift(1)
+        prev_lo = d["low"].rolling(p.entry_n).min().shift(1)
+        exit_lo = d["low"].rolling(p.exit_n).min().shift(1)
+        exit_hi = d["high"].rolling(p.exit_n).max().shift(1)
+        out["long_entry"] = c > prev_hi
+        out["short_entry"] = c < prev_lo
+        out["long_exit"] = c < exit_lo
+        out["short_exit"] = c > exit_hi
+        warm = max(p.entry_n, p.exit_n, 20) + 1
+    else:
+        fast, slow = ema(c, p.entry_n), ema(c, p.exit_n)
+        above = fast > slow
+        out["long_entry"] = above & ~above.shift(1, fill_value=False)
+        out["short_entry"] = ~above & above.shift(1, fill_value=False)
+        out["long_exit"] = ~above
+        out["short_exit"] = above
+        warm = p.exit_n * 2
+    out.iloc[:warm, out.columns.get_indexer(["long_entry", "short_entry"])] = False
+    return out
+
+
+def _net(entry: float, exit_px: float, is_short: bool, days_held: int, funding: float) -> float:
+    fill = exit_px * (1 + EXIT_SLIPPAGE_PCT) if is_short else exit_px * (1 - EXIT_SLIPPAGE_PCT)
+    gross = (entry - fill) / entry if is_short else (fill - entry) / entry
+    return gross - TAKER_FEE_PCT - TAKER_FEE_PCT * (fill / entry) - funding * max(days_held, 1)
+
+
+def simulate_trend(
+    symbol: str,
+    d: pd.DataFrame,
+    p: TrendParams,
+    start: pd.Timestamp | None = None,
+    end: pd.Timestamp | None = None,
+) -> list[Trade]:
+    sig = compute_trend_signals(d, p)
+    idx = d.index
+    o, hi, lo, c = (d[k].to_numpy() for k in ("open", "high", "low", "close"))
+    a = sig["atr"].to_numpy()
+    le, se = sig["long_entry"].to_numpy(), sig["short_entry"].to_numpy()
+    lx, sx = sig["long_exit"].to_numpy(), sig["short_exit"].to_numpy()
+    allowed = np.ones(len(d), dtype=bool)
+    if start is not None:
+        allowed &= idx >= start
+    if end is not None:
+        allowed &= idx < end
+
+    trades: list[Trade] = []
+    n, i = len(d), 0
+    while i < n - 1:
+        go_long = allowed[i] and le[i] and a[i] > 0
+        go_short = allowed[i] and p.side == "both" and se[i] and a[i] > 0
+        if not (go_long or go_short):
+            i += 1
+            continue
+        is_short = bool(go_short and not go_long)
+        j = i + 1
+        entry = o[j] * (1 - ENTRY_SLIPPAGE_PCT) if is_short else o[j] * (1 + ENTRY_SLIPPAGE_PCT)
+        stop_dist = p.atr_k * a[i]
+        stop = entry + stop_dist if is_short else entry - stop_dist
+        risk_frac = stop_dist / entry
+        best_close = entry
+        exit_px, reason, k = None, None, j
+
+        for k in range(j, n):
+            if (is_short and hi[k] >= stop) or (not is_short and lo[k] <= stop):
+                gap = (o[k] > stop) if is_short else (o[k] < stop)
+                exit_px, reason = (o[k] if gap else stop), "STOP"
+                break
+            exit_signal = sx[k] if is_short else lx[k]
+            if exit_signal and k + 1 < n:
+                exit_px, reason, k = o[k + 1], "TREND_EXIT", k + 1
+                break
+            # trail from the best close so far (chandelier stop), using today's ATR
+            best_close = min(best_close, c[k]) if is_short else max(best_close, c[k])
+            if a[k] > 0:
+                trail = best_close + p.atr_k * a[k] if is_short else best_close - p.atr_k * a[k]
+                stop = min(stop, trail) if is_short else max(stop, trail)
+
+        if exit_px is None:
+            exit_px, reason, k = c[n - 1], "END_OF_DATA", n - 1
+
+        days_held = int((idx[k] - idx[j]).days)
+        net = _net(entry, exit_px, is_short, days_held, p.funding_pct_per_day)
+        trades.append(Trade(
+            symbol=symbol, direction="SHORT" if is_short else "LONG",
+            entry_time=str(idx[j]), exit_time=str(idx[k]),
+            entry=round(entry, 8), exit=round(float(exit_px), 8),
+            stop_dist=round(stop_dist, 8), exit_reason=reason,
+            net_pct=round(net * 100, 4),
+            r_multiple=round(net / risk_frac, 3) if risk_frac > 0 else 0.0,
+        ))
+        i = k + 1
+    return trades
+
+
+# ------------------------------------------------------------------ compounding
+
+def compound(trades: list[Trade], start_equity: float = 10.0, risk_pct: float = 0.01) -> dict:
+    """Replay trades in time order, risking `risk_pct` of equity at each entry.
+
+    P&L is booked at exit; positions overlap across symbols, so risk is computed
+    from equity as of each entry (equity known at that moment).
+    """
+    if not trades:
+        return {"start_equity": start_equity, "end_equity": start_equity, "return_pct": 0.0, "max_drawdown_pct": 0.0}
+    events = []
+    for t in trades:
+        events.append((pd.Timestamp(t.entry_time), 1, t))
+        events.append((pd.Timestamp(t.exit_time), 0, t))
+    events.sort(key=lambda e: (e[0], e[1]))  # exits before entries on the same day
+    equity, peak, max_dd = start_equity, start_equity, 0.0
+    at_risk: dict[int, float] = {}
+    for _, kind, t in events:
+        if kind == 1:
+            at_risk[id(t)] = equity * risk_pct
+        else:
+            equity += at_risk.pop(id(t), 0.0) * t.r_multiple
+            peak = max(peak, equity)
+            max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else 0.0)
+    return {
+        "start_equity": round(start_equity, 2),
+        "end_equity": round(equity, 2),
+        "return_pct": round((equity / start_equity - 1) * 100, 1),
+        "max_drawdown_pct": round(max_dd * 100, 1),
+    }
+
+
+def hold_return_pct(d: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp | None = None) -> float:
+    w = d[(d.index >= start) & ((d.index < end) if end is not None else True)]
+    if len(w) < 2:
+        return float("nan")
+    return round((w["close"].iloc[-1] / w["open"].iloc[0] - 1) * 100, 1)
+
+
+# -------------------------------------------------------------------------- run
+
+def sweep_grid(funding: float) -> list[TrendParams]:
+    g = []
+    for side in ("long", "both"):
+        for k in (3.0, 4.0):
+            for n_in, n_out in ((20, 10), (20, 20), (55, 10), (55, 20)):
+                g.append(TrendParams("donchian", n_in, n_out, k, side, funding))
+            for fast, slow in ((20, 100), (50, 200)):
+                g.append(TrendParams("ema", fast, slow, k, side, funding))
+    return g
+
+
+def run(data: dict[str, pd.DataFrame], p: TrendParams, start=None, end=None) -> list[Trade]:
+    out: list[Trade] = []
+    for sym, d in data.items():
+        out.extend(simulate_trend(sym, d, p, start, end))
+    return out
+
+
+def _report(title: str, trades: list[Trade], risk_pct: float) -> dict:
+    s = summarize(trades)
+    s["compounded_1pct_risk_from_$10"] = compound(trades, 10.0, risk_pct)
+    print(f"\n=== {title} ===")
+    print(json.dumps(s, indent=2))
+    print("VERDICT:", verdict(s))
+    return s
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--symbols", nargs="*")
+    ap.add_argument("--majors", action="store_true")
+    ap.add_argument("--top", type=int, default=10)
+    ap.add_argument("--days", type=int, default=1095, help="History to test (default 3 years)")
+    ap.add_argument("--funding", type=float, default=DEFAULT_FUNDING_PCT_PER_DAY, help="Funding cost per day held, e.g. 0.0003")
+    ap.add_argument("--risk-pct", type=float, default=0.01, help="Equity risked per trade in the compounding replay")
+    ap.add_argument("--sweep", action="store_true")
+    ap.add_argument("--test-frac", type=float, default=1 / 3)
+    ap.add_argument("--refresh", action="store_true")
+    ap.add_argument("--csv")
+    args = ap.parse_args()
+
+    symbols = args.symbols or (MAJORS if args.majors else top_perpetuals(args.top))
+    warmup = 260
+    print(f"Costs per side: taker+GST {TAKER_FEE_PCT*100:.4f}%, slippage {ENTRY_SLIPPAGE_PCT*100:.3f}%/{EXIT_SLIPPAGE_PCT*100:.3f}%; funding {args.funding*100:.3f}%/day held")
+    data: dict[str, pd.DataFrame] = {}
+    for sym in symbols:
+        try:
+            d = load_daily(sym, args.days + warmup, args.refresh)
+        except Exception as e:
+            print(f"  {sym}: data error ({e})")
+            continue
+        if len(d) < 365:
+            print(f"  {sym}: skipped, only {len(d)} days of history")
+            continue
+        data[sym] = d
+        print(f"  {sym}: {len(d)} days ({d.index[0].date()} -> {d.index[-1].date()})")
+    if not data:
+        print("No usable data.")
+        return
+
+    last = max(d.index[-1] for d in data.values())
+    start = max(last - pd.Timedelta(days=args.days), min(d.index[0] for d in data.values()) + pd.Timedelta(days=warmup))
+    btc = data.get("BTCUSD")
+
+    base = PRE_REGISTERED if args.funding == DEFAULT_FUNDING_PCT_PER_DAY else TrendParams(**{**asdict(PRE_REGISTERED), "funding_pct_per_day": args.funding})
+    trades = run(data, base, start)
+    _report(f"PRE-REGISTERED RULE (untuned): {base.label()}  {start.date()} -> {last.date()}", trades, args.risk_pct)
+    if btc is not None:
+        print(f"For comparison, holding BTC over the same period: {hold_return_pct(btc, start)}%")
+    if args.csv and trades:
+        pd.DataFrame([asdict(t) for t in trades]).to_csv(args.csv, index=False)
+        print(f"Trades written to {args.csv}")
+
+    if args.sweep:
+        split = last - pd.Timedelta(days=int((last - start).days * args.test_frac))
+        print(f"\nSweep training: {start.date()} -> {split.date()} | test (unseen): {split.date()} -> {last.date()}")
+        rows = []
+        for p in sweep_grid(args.funding):
+            s = summarize(run(data, p, start, split))
+            if s.get("trades", 0) >= 30:
+                rows.append((s["expectancy_R"], p, s))
+        if not rows:
+            print("No setting produced 30+ training trades.")
+            return
+        rows.sort(key=lambda x: x[0], reverse=True)
+        print("\nTop 5 on training data:")
+        for e, p, s in rows[:5]:
+            print(f"  expR={e:+.3f} trades={s['trades']:4d} win%={s['win_rate_pct']:5.1f} PF={s['profit_factor']} | {p.label()}")
+        best = rows[0][1]
+        _report(f"BEST TRAINING SETTING ON UNSEEN TEST DATA: {best.label()}", run(data, best, split), args.risk_pct)
+        _report(f"PRE-REGISTERED RULE ON THE SAME TEST DATA: {base.label()}", run(data, base, split), args.risk_pct)
+        if btc is not None:
+            print(f"Holding BTC over the test period: {hold_return_pct(btc, split)}%")
+        print("\nOnly results on unseen data (and the untuned pre-registered rule) count.")
+
+
+if __name__ == "__main__":
+    main()
